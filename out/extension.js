@@ -51,7 +51,7 @@ function log(...args) {
 const ASSET_EXTS = new Set([
     'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico', 'bmp',
     'mp4', 'webm', 'ogg', 'mp3', 'wav', 'flac',
-    'pdf', 'woff', 'woff2', 'ttf', 'eot',
+    'pdf', 'woff', 'woff2', 'ttf', 'eot', 'riv'
 ]);
 function getAliases() {
     const config = vscode.workspace.getConfiguration('dragImport');
