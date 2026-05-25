@@ -85,8 +85,8 @@ cursor --install-extension drag-import-1.0.0.vsix
 需要 **Node.js 20+**（打包工具 `vsce` 在 Node 18 下会报错）。项目含 `.nvmrc`：
 
 ```bash
-git clone <your-repo-url>
-cd vscode-drag-import
+git clone https://github.com/SZGG2333/cursor-extension.git
+cd cursor-extension
 nvm use
 npm install
 npm run compile

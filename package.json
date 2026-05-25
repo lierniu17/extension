@@ -71,5 +71,13 @@
     "typescript"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SZGG2333/cursor-extension.git"
+  },
+  "bugs": {
+    "url": "https://github.com/SZGG2333/cursor-extension/issues"
+  },
+  "homepage": "https://github.com/SZGG2333/cursor-extension#readme",
   "icon": "images/icon.png"
 }
