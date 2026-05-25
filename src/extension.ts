@@ -12,7 +12,6 @@ function log(...args: unknown[]) {
   outputChannel?.appendLine(line);
   console.log(line);
 }
-
 // ─── Config ─────────────────────────────────────────────────────
 
 const ASSET_EXTS = new Set([
