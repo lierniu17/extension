@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<!--
+  Offscreen document 载体页面
+  用途：在 Service Worker 休眠后仍能承载长时运行的 JS（schema 分析器）
+  界面不会可见，Chrome 也不允许它渲染 UI；只作为 JS 运行上下文
+-->
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<title>Pagenter Sniff Worker</title>
+		<script type="module" crossorigin src="/chunks/offscreen-B2x1nsSo.js"></script>
+		<link rel="modulepreload" crossorigin href="/chunks/db-C_cyLlZZ.js">
+		<link rel="modulepreload" crossorigin href="/chunks/db-C3Se-Bze.js">
+	</head>
+	<body>
+		<!-- 唯一脚本，所有逻辑都在 main.ts 里 -->
+	</body>
+</html>
