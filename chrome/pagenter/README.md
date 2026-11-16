@@ -12,7 +12,7 @@ Pagenter 1.8.0 的还原源码（Restored Source）：单个 WXT 工程（ADR-00
 pnpm install --frozen-lockfile   # 按 lockfile 安装
 pnpm build                       # 构建到 .output/chrome-mv3（关闭压缩）
 pnpm typecheck                   # wxt prepare + tsc --noEmit（strict）
-pnpm check:any                   # 含显式 any 的文件必须在文件头标 // TODO(types)
+pnpm check:any                   # 含显式 any 的文件必须在文件头标 // TODO(types)（原样保留的上游文件除外）
 pnpm test                        # vitest；tests/build/ 下的用例读 pnpm build 的产物
 pnpm compare                     # 对比脚本，见下
 pnpm verify                      # build + typecheck + check:any + test + compare
@@ -25,7 +25,8 @@ pnpm verify                      # build + typecheck + check:any + test + compar
 | 路径 | 内容 |
 | --- | --- |
 | `src/entrypoints/` | background、content、pagenter-bridge（主世界）、sidepanel、options、popup、hub、offscreen |
-| `src/core`、`src/llms`、`src/page-controller` | 上游三个包，作为子目录（批次 2、3 还原） |
+| `src/core`、`src/llms`、`src/page-controller` | 上游三个包，作为子目录（core、llms 批次 2 已还原，page-controller 批次 3） |
+| `src/agent`、`src/lib` | 扩展侧的 agent 层（MultiPageAgent、Tabs/RemotePageController、tools）与共享模块（cdp、upstreamClient）；`src/lib/sniffDb.ts` 是批次 4 之前的占位 |
 | `public/` | `_locales` 与图标，从产物原样复制 |
 | `scripts/compare/` | 对比脚本 |
 | `scripts/unchanged-files.ts` | 生成「未改动文件表」 |
@@ -47,7 +48,7 @@ pnpm compare --original <dir> --restored <dir> --out <dir> [--no-probe]
 
 - 两边 `.js` 都先用 prettier 格式化，再用 acorn 取顶层声明（函数、类、变量；不声明任何名字的顶层语句记作 `<statement>`）。WXT 给 background / content / bridge 包的 IIFE 会先拆开。
 - import / export 语句去掉；`import { e as getSession$1 }` 这类 Vite 短名别名映射回真名。
-- 比较的是去掉空白后的 token 序列（注释也算），并做三种归一：rollup 重名后缀（`$1`、`$d`、嵌套作用域里的 `current2`）去掉；prettier 因行宽才加的尾逗号去掉。代价：只差一个尾部数字的标识符（`x1` / `x2`）会被视为相同。
+- 比较的是去掉空白后的 token 序列（注释也算），并做三种归一：rollup 重名后缀（`$1`、`$d`、嵌套作用域里的 `current2`）去掉；prettier 因行宽才加的尾逗号去掉；键与值同名的属性（rollup 改名后写成的 `{ content: content2 }`）按简写 `{ content }` 比。代价：只差一个尾部数字的标识符（`x1` / `x2`）会被视为相同。
 - 对应关系：按声明名配对，文件名与 chunk 拆分不影响；同名声明有多份时先按声明体配，再按「逻辑文件」（去掉 chunk hash 的路径，如 `chunks/db`）配；对不上的进「仅一方有」，由人判断是口径问题还是还原遗漏。
 - 排除项（不进三类清单，单独列在报告里）：
   - 新产物的第三方代码：构建时 `scripts/compare/decl-origin-plugin.ts` 记下每个声明来自哪个包（写到 `.output/compare/decl-origin/`，不进扩展目录）。
