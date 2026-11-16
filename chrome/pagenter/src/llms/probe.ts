@@ -1,5 +1,40 @@
-// TODO(types)
+import type { LLMConfig, TokenLimitParam } from './types'
 import { applyTokenLimit, isUnsupportedTokenParamError, modelPatch } from './utils'
+
+/** Result of probing one capability. */
+export interface ProbeCheck<T = never> {
+	supported: boolean
+	value?: T
+	error?: string
+	/** Where the answer came from, e.g. `probe:max_tokens` or `blocked:connectivity`. */
+	evidence: string
+	/** The probe could not tell (request format errors, weak answers). */
+	inconclusive?: boolean
+}
+
+/** What {@link probeCapabilities} found out about a model endpoint. */
+export interface ProbeResult {
+	ok: boolean
+	connectivityError?: string
+	tokenParam: ProbeCheck<TokenLimitParam>
+	vision: ProbeCheck
+	contextLength: ProbeCheck<number>
+}
+
+export interface ProbeOptions {
+	/** Skip the per-endpoint cache. */
+	force?: boolean
+	signal?: AbortSignal
+}
+
+type ProbeConfig = Pick<LLMConfig, 'baseURL' | 'model' | 'apiKey' | 'customFetch'>
+type FetchFn = typeof globalThis.fetch
+
+type VisionOutcome =
+	| { kind: 'success' }
+	| { kind: 'weak_response' }
+	| { kind: 'model_rejects' | 'request_error'; error: string }
+	| { kind: 'http_error'; status: number; error: string }
 
 const PROBE_MAX_TOKENS = 10
 const RED_PIXEL_PNG =
@@ -29,11 +64,14 @@ const COLOR_WORDS = [
 ]
 const PROBE_TIMEOUT_MS = 8e3
 const CONTEXT_LENGTH_FIELD_CANDIDATES = ['context_window', 'max_input_tokens', 'context_length']
-const probeCache = new Map()
-function cacheKey(config: any) {
+const probeCache = new Map<string, { result: ProbeResult; at: number }>()
+function cacheKey(config: ProbeConfig) {
 	return `${config.baseURL}::${config.model}::${config.apiKey ?? ''}`
 }
-export async function probeCapabilities(config: any, options: any = {}) {
+export async function probeCapabilities(
+	config: ProbeConfig,
+	options: ProbeOptions = {}
+): Promise<ProbeResult> {
 	const key = cacheKey(config)
 	if (!options.force) {
 		const cached = probeCache.get(key)
@@ -43,7 +81,10 @@ export async function probeCapabilities(config: any, options: any = {}) {
 	probeCache.set(key, { result, at: Date.now() })
 	return result
 }
-async function runProbe(config: any, externalSignal: any) {
+async function runProbe(
+	config: ProbeConfig,
+	externalSignal: AbortSignal | undefined
+): Promise<ProbeResult> {
 	const fetchFn = config.customFetch ?? globalThis.fetch.bind(globalThis)
 	const connectivity = await probeConnectivity(config, fetchFn, externalSignal)
 	if (!connectivity.ok) {
@@ -68,14 +109,18 @@ async function runProbe(config: any, externalSignal: any) {
 		contextLength,
 	}
 }
-function blockedByConnectivity(reason: any) {
+function blockedByConnectivity(reason: string | undefined): ProbeCheck {
 	return {
 		supported: false,
 		error: `connectivity failed: ${reason}`,
 		evidence: 'blocked:connectivity',
 	}
 }
-async function probeConnectivity(config: any, fetchFn: any, externalSignal: any) {
+async function probeConnectivity(
+	config: ProbeConfig,
+	fetchFn: FetchFn,
+	externalSignal: AbortSignal | undefined
+): Promise<{ ok: boolean; error?: string }> {
 	const { signal, cleanup } = withTimeout(externalSignal, PROBE_TIMEOUT_MS)
 	try {
 		const response = await fetchFn(`${config.baseURL}/chat/completions`, {
@@ -99,15 +144,19 @@ async function probeConnectivity(config: any, fetchFn: any, externalSignal: any)
 			return { ok: false, error: 'Invalid response shape: missing choices[]' }
 		}
 		return { ok: true }
-	} catch (error: any) {
+	} catch (error) {
 		return { ok: false, error: describeError(error) }
 	} finally {
 		cleanup()
 	}
 }
-async function probeTokenParam(config: any, fetchFn: any, externalSignal: any) {
-	const candidates = ['max_completion_tokens', 'max_tokens']
-	const errors = []
+async function probeTokenParam(
+	config: ProbeConfig,
+	fetchFn: FetchFn,
+	externalSignal: AbortSignal | undefined
+): Promise<ProbeCheck<TokenLimitParam>> {
+	const candidates: TokenLimitParam[] = ['max_completion_tokens', 'max_tokens']
+	const errors: string[] = []
 	for (const param of candidates) {
 		const { signal, cleanup } = withTimeout(externalSignal, PROBE_TIMEOUT_MS)
 		try {
@@ -135,7 +184,7 @@ async function probeTokenParam(config: any, fetchFn: any, externalSignal: any) {
 			}
 			const detail = await readErrorDetail(response)
 			errors.push(`${param}: HTTP ${response.status}: ${detail}`)
-		} catch (error: any) {
+		} catch (error) {
 			errors.push(`${param}: ${describeError(error)}`)
 		} finally {
 			cleanup()
@@ -154,8 +203,12 @@ const VISION_PROBE_VARIANTS = [
 	{ id: 'detail', includeDetail: true, useToken: false },
 	{ id: 'detail+token', includeDetail: true, useToken: true },
 ]
-function buildVisionProbeBody(config: any, variant: any, tokenParam: any) {
-	const imageUrl: any = {
+function buildVisionProbeBody(
+	config: ProbeConfig,
+	variant: (typeof VISION_PROBE_VARIANTS)[number],
+	tokenParam: TokenLimitParam
+) {
+	const imageUrl: { url: string; detail?: string } = {
 		url: `data:image/png;base64,${RED_PIXEL_PNG}`,
 	}
 	if (variant.includeDetail) imageUrl.detail = 'low'
@@ -174,7 +227,7 @@ function buildVisionProbeBody(config: any, variant: any, tokenParam: any) {
 	if (variant.useToken) applyTokenLimit(body, PROBE_MAX_TOKENS, tokenParam)
 	return body
 }
-function isModelRejectsVisionError(message: any) {
+function isModelRejectsVisionError(message: string) {
 	const lower = message.toLowerCase()
 	return (
 		/multimodal|image.?input|vision.?model|does not support.*image|not support.*image|image content/.test(
@@ -182,7 +235,7 @@ function isModelRejectsVisionError(message: any) {
 		) || /多模态|图像输入|图片输入|不支持.*图|不支持.*视觉/.test(message)
 	)
 }
-function isRequestFormatError(message: any) {
+function isRequestFormatError(message: string) {
 	if (isUnsupportedTokenParamError(message)) return true
 	const lower = message.toLowerCase()
 	return (
@@ -196,17 +249,17 @@ function isRequestFormatError(message: any) {
 		(lower.includes('detail') && lower.includes('not'))
 	)
 }
-function responseHasColorWord(content: any) {
+function responseHasColorWord(content: string) {
 	const lower = content.toLowerCase()
 	return COLOR_WORDS.some((w) => lower.includes(w))
 }
 async function tryVisionProbeVariant(
-	config: any,
-	fetchFn: any,
-	signal: any,
-	variant: any,
-	tokenParam: any
-) {
+	config: ProbeConfig,
+	fetchFn: FetchFn,
+	signal: AbortSignal,
+	variant: (typeof VISION_PROBE_VARIANTS)[number],
+	tokenParam: TokenLimitParam
+): Promise<VisionOutcome> {
 	const body = buildVisionProbeBody(config, variant, tokenParam)
 	modelPatch(body)
 	const response = await fetchFn(`${config.baseURL}/chat/completions`, {
@@ -230,9 +283,14 @@ async function tryVisionProbeVariant(
 	if (responseHasColorWord(content)) return { kind: 'success' }
 	return { kind: 'weak_response' }
 }
-async function probeVision(config: any, fetchFn: any, externalSignal: any, tokenParam: any) {
+async function probeVision(
+	config: ProbeConfig,
+	fetchFn: FetchFn,
+	externalSignal: AbortSignal | undefined,
+	tokenParam: TokenLimitParam
+): Promise<ProbeCheck> {
 	const { signal, cleanup } = withTimeout(externalSignal, PROBE_TIMEOUT_MS)
-	const errors = []
+	const errors: string[] = []
 	let sawModelReject = false
 	let sawRequestFormat = false
 	let sawWeakResponse = false
@@ -260,7 +318,7 @@ async function probeVision(config: any, fetchFn: any, externalSignal: any, token
 				if (isModelRejectsVisionError(errMsg)) sawModelReject = true
 				else if (isRequestFormatError(errMsg)) sawRequestFormat = true
 				errors.push(`${variant.id}: ${errMsg}`)
-			} catch (error: any) {
+			} catch (error) {
 				const errMsg = describeError(error)
 				if (isRequestFormatError(errMsg)) sawRequestFormat = true
 				errors.push(`${variant.id}: ${errMsg}`)
@@ -295,7 +353,7 @@ async function probeVision(config: any, fetchFn: any, externalSignal: any, token
 			error: joined || 'All vision probe variants failed',
 			evidence: 'probe:image-call',
 		}
-	} catch (error: any) {
+	} catch (error) {
 		return {
 			supported: false,
 			error: describeError(error),
@@ -305,7 +363,11 @@ async function probeVision(config: any, fetchFn: any, externalSignal: any, token
 		cleanup()
 	}
 }
-async function probeContextLength(config: any, fetchFn: any, externalSignal: any) {
+async function probeContextLength(
+	config: ProbeConfig,
+	fetchFn: FetchFn,
+	externalSignal: AbortSignal | undefined
+): Promise<ProbeCheck<number>> {
 	const { signal, cleanup } = withTimeout(externalSignal, PROBE_TIMEOUT_MS)
 	try {
 		const url = `${config.baseURL}/models/${encodeURIComponent(config.model)}`
@@ -345,7 +407,7 @@ async function probeContextLength(config: any, fetchFn: any, externalSignal: any
 			value,
 			evidence: `api:/v1/models[${fieldName}]`,
 		}
-	} catch (error: any) {
+	} catch (error) {
 		return {
 			supported: false,
 			error: describeError(error),
@@ -355,10 +417,10 @@ async function probeContextLength(config: any, fetchFn: any, externalSignal: any
 		cleanup()
 	}
 }
-function pickContextLengthField(raw: any) {
+function pickContextLengthField(raw: Record<string, unknown>) {
 	const candidates = [raw]
 	if (raw.data && typeof raw.data === 'object' && !Array.isArray(raw.data)) {
-		candidates.push(raw.data)
+		candidates.push(raw.data as Record<string, unknown>)
 	}
 	for (const obj of candidates) {
 		for (const field of CONTEXT_LENGTH_FIELD_CANDIDATES) {
@@ -370,7 +432,7 @@ function pickContextLengthField(raw: any) {
 	}
 	return { value: null, fieldName: '' }
 }
-function withTimeout(externalSignal: any, timeoutMs: any) {
+function withTimeout(externalSignal: AbortSignal | undefined, timeoutMs: number) {
 	const controller = new AbortController()
 	const timer = setTimeout(() => controller.abort(), timeoutMs)
 	const onExternalAbort = () => controller.abort()
@@ -386,7 +448,7 @@ function withTimeout(externalSignal: any, timeoutMs: any) {
 		},
 	}
 }
-async function readErrorDetail(response: any) {
+async function readErrorDetail(response: Response): Promise<string> {
 	try {
 		const data = await response.json()
 		return data.error?.message || response.statusText || 'Unknown error'
@@ -394,7 +456,7 @@ async function readErrorDetail(response: any) {
 		return response.statusText || 'Unknown error'
 	}
 }
-function describeError(error: any) {
+function describeError(error: unknown) {
 	if (error && typeof error === 'object' && 'name' in error && error.name === 'AbortError') {
 		return `Request timed out after ${PROBE_TIMEOUT_MS}ms`
 	}

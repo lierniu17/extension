@@ -1,23 +1,28 @@
-// TODO(types)
 import { InvokeError, InvokeErrorType } from './errors'
+import type { ChatRequestBody, CompletionResult, LLMConfig, Message, TokenLimitParam } from './types'
 import { applyTokenLimit, isUnsupportedTokenParamError, modelPatch } from './utils'
 
+/** Outcome of one request: success, a rejected token-limit field, or any other error. */
+type TryCompleteResult =
+	| { kind: 'ok'; value: CompletionResult }
+	| { kind: 'unsupportedTokenParam' | 'error'; error: InvokeError }
+
 export const DEFAULT_TOKEN_PARAM = 'max_completion_tokens'
-function nextTokenParam(current: any) {
+function nextTokenParam(current: TokenLimitParam): TokenLimitParam | null {
 	if (current === 'max_completion_tokens') return 'max_tokens'
 	if (current === 'max_tokens') return 'max_completion_tokens'
 	return null
 }
 export class OpenAIClient {
-	config
-	fetch
-	constructor(config: any) {
+	config: LLMConfig
+	fetch: typeof globalThis.fetch
+	constructor(config: LLMConfig) {
 		this.config = config
 		this.fetch = config.customFetch ?? globalThis.fetch.bind(globalThis)
 	}
-	async completeText(messages: any, abortSignal: any) {
-		const initialParam = this.config.tokenLimitParam ?? DEFAULT_TOKEN_PARAM
-		const triedParams = new Set()
+	async completeText(messages: Message[], abortSignal: AbortSignal): Promise<CompletionResult> {
+		const initialParam: TokenLimitParam = this.config.tokenLimitParam ?? DEFAULT_TOKEN_PARAM
+		const triedParams = new Set<TokenLimitParam>()
 		let currentParam = initialParam
 		while (true) {
 			triedParams.add(currentParam)
@@ -52,8 +57,12 @@ export class OpenAIClient {
 	 * 返回值显式区分三种结局，避免把"参数兼容性问题"和"通用网络/服务端错误"
 	 * 混进同一个 InvokeError 通道导致外层 withRetry 反复重试同一种死法。
 	 */
-	async tryComplete(messages: any, tokenParam: any, abortSignal: any) {
-		const requestBody: any = {
+	async tryComplete(
+		messages: Message[],
+		tokenParam: TokenLimitParam,
+		abortSignal: AbortSignal
+	): Promise<TryCompleteResult> {
+		const requestBody: ChatRequestBody = {
 			model: this.config.model,
 			messages,
 		}
@@ -75,8 +84,8 @@ export class OpenAIClient {
 				body: JSON.stringify(requestBody),
 				signal: abortSignal,
 			})
-		} catch (error: any) {
-			const isAbortError = error?.name === 'AbortError'
+		} catch (error) {
+			const isAbortError = (error as Error | undefined)?.name === 'AbortError'
 			const errorMessage = isAbortError ? 'Network request aborted' : 'Network request failed'
 			if (!isAbortError) console.error(error)
 			return {
