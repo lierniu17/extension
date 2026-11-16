@@ -1,7 +1,20 @@
-// TODO(types)
 // Forwards a tool call to an upstream MCP server over JSON-RPC (plain JSON or an
 // SSE frame). The stdio transport is still unimplemented, as in the bundle.
-export async function callUpstreamTool(server: any, toolName: any, args: any) {
+import type { UpstreamMcpServer } from '@/lib/dbSchema'
+
+/** A JSON-RPC 2.0 response of the upstream server. */
+interface JsonRpcResponse {
+	jsonrpc?: '2.0'
+	id?: number | string | null
+	result?: unknown
+	error?: { code?: number; message: string; data?: unknown }
+}
+
+export async function callUpstreamTool(
+	server: Pick<UpstreamMcpServer, 'name' | 'transport' | 'url'>,
+	toolName: string,
+	args: unknown
+) {
 	if (server.transport === 'stdio') {
 		throw new Error(
 			'stdio transport requires Pagenter Hub relay, which is not yet implemented. Please use sse transport or wait for Hub integration.'
@@ -29,7 +42,7 @@ export async function callUpstreamTool(server: any, toolName: any, args: any) {
 	}
 	return parsed.result
 }
-function parseJsonRpcOrSseFrame(text: any) {
+function parseJsonRpcOrSseFrame(text: string): JsonRpcResponse {
 	try {
 		return JSON.parse(text)
 	} catch {}
@@ -37,7 +50,7 @@ function parseJsonRpcOrSseFrame(text: any) {
 	if (match) {
 		try {
 			return JSON.parse(match[1])
-		} catch (err: any) {
+		} catch (err) {
 			throw new Error(`Failed to parse SSE data frame: ${err}`)
 		}
 	}

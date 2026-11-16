@@ -1,5 +1,5 @@
-// TODO(types)
 import { PageAgentCore } from '@/core/PageAgentCore'
+import type { AgentConfig } from '@/core/types'
 
 import { RemotePageController } from './RemotePageController'
 import { TabsController } from './TabsController'
@@ -11,12 +11,20 @@ import SYSTEM_PROMPT_CN from './system_prompt_cn.md?raw'
 import { createTabTools } from './tabTools'
 import { createVisionTools } from './visionTools'
 
+/** Config of the normal (step-by-step) mode agent. */
+export interface MultiPageAgentConfig extends Omit<AgentConfig, 'pageController'> {
+	/** Start with the tab that is active when the task begins (default true). */
+	includeInitialTab?: boolean
+	/** Track every tab of the window instead of only the agent's tab group. */
+	experimentalIncludeAllTabs?: boolean
+}
+
 function detectLanguage() {
 	const lang = navigator.language || navigator.languages?.[0] || 'en-US'
 	return lang.startsWith('zh') ? 'zh-CN' : 'en-US'
 }
 export class MultiPageAgent extends PageAgentCore {
-	constructor(config: any) {
+	constructor(config: MultiPageAgentConfig) {
 		const tabsController = new TabsController()
 		const pageController = new RemotePageController(tabsController)
 		const tabTools = createTabTools(tabsController)
@@ -28,13 +36,13 @@ export class MultiPageAgent extends PageAgentCore {
 		const systemPrompt = injectBridgeApis(promptTemplate)
 		const includeInitialTab = config.includeInitialTab ?? true
 		const experimentalIncludeAllTabs = config.experimentalIncludeAllTabs ?? false
-		let heartBeatInterval: any = null
+		let heartBeatInterval: number | null = null
 		super({
 			...config,
 			pageController,
 			customTools,
 			customSystemPrompt: systemPrompt,
-			onBeforeTask: async (agent: any) => {
+			onBeforeTask: async (agent) => {
 				await tabsController.init(agent.task, {
 					includeInitialTab,
 					experimentalIncludeAllTabs,
@@ -64,7 +72,7 @@ export class MultiPageAgent extends PageAgentCore {
 					agentMode: null,
 				})
 			},
-			onBeforeStep: async (agent: any) => {
+			onBeforeStep: async (agent) => {
 				if (!tabsController.currentTabId) return
 				await tabsController.waitUntilTabLoaded(tabsController.currentTabId)
 			},

@@ -1,4 +1,3 @@
-// TODO(types)
 // Sniff scrubbing (脱敏): sensitive fields are redacted by key name, personal
 // data inside strings is masked by value pattern. Applied to every sample
 // (headers and bodies) before it leaves the background.
@@ -98,9 +97,9 @@ export const BUILT_IN_RULES: ScrubRule[] = [
 ]
 
 /** Scrub any JSON-like value (objects and arrays recursively). */
-export function scrubValue(value: any, options: ScrubOptions = {}): any {
+export function scrubValue<T>(value: T, options: ScrubOptions = {}): T {
 	const rules = resolveRules(options)
-	return recurse(value, null, rules)
+	return recurse(value, null, rules) as T
 }
 
 /** Scrub an HTTP header map: key rules redact the whole value, value rules mask inside it. */
@@ -129,10 +128,10 @@ function resolveRules(options: ScrubOptions) {
 	return [...base, ...custom]
 }
 
-function recurse(value: any, currentKey: string | null, rules: ScrubRule[]): any {
+function recurse(value: unknown, currentKey: string | null, rules: ScrubRule[]): unknown {
 	if (value === null || value === undefined) return value
 	if (typeof value === 'object' && !Array.isArray(value)) {
-		const out: Record<string, any> = {}
+		const out: Record<string, unknown> = {}
 		for (const [k, v] of Object.entries(value)) {
 			const keyHit = rules.find(
 				(r) => (r.scope === 'key' || r.scope === 'both') && r.keyPattern?.test(k)
@@ -155,11 +154,11 @@ function recurse(value: any, currentKey: string | null, rules: ScrubRule[]): any
 }
 
 /** Keep the shape (objects / arrays) under a sensitive key, redact every leaf. */
-function redactBySchema(value: any, rule: ScrubRule): any {
+function redactBySchema(value: unknown, rule: ScrubRule): unknown {
 	if (value === null || value === undefined) return value
 	if (Array.isArray(value)) return value.map((v) => redactBySchema(v, rule))
 	if (typeof value === 'object') {
-		const out: Record<string, any> = {}
+		const out: Record<string, unknown> = {}
 		for (const [k, v] of Object.entries(value)) {
 			out[k] = redactBySchema(v, rule)
 		}
@@ -168,14 +167,14 @@ function redactBySchema(value: any, rule: ScrubRule): any {
 	return applyFullReplace(value, rule)
 }
 
-function applyFullReplace(value: any, rule: ScrubRule) {
+function applyFullReplace(value: unknown, rule: ScrubRule) {
 	if (rule.strategy === 'hash') {
 		return `[REDACTED:${rule.id}:${shortHash(toDebugString(value))}]`
 	}
 	return `[REDACTED:${rule.id}]`
 }
 
-function toDebugString(v: any): string {
+function toDebugString(v: unknown): string {
 	if (v === null) return 'null'
 	if (v === undefined) return 'undefined'
 	if (typeof v === 'object') return JSON.stringify(v)

@@ -1,9 +1,16 @@
-// TODO(types)
 // Sniff tables in the shared IndexedDB (schema in `@/lib/db`): projects,
 // normalized APIs, samples, inferred specs and upstream MCP servers.
 import { getDB } from '@/lib/db'
+import type {
+	SniffApi,
+	SniffProject,
+	SniffProjectConfig,
+	SniffSample,
+	SniffSpec,
+	UpstreamMcpServer,
+} from '@/lib/dbSchema'
 
-export const DEFAULT_PROJECT_CONFIG = {
+export const DEFAULT_PROJECT_CONFIG: SniffProjectConfig = {
 	// 单个 body 超过 256KB 就截断（防止超大 JSON 塞爆 IDB）
 	maxBodyKB: 256,
 	// 默认忽略的 mime 类型（图片、字体、视频、音频）
@@ -20,10 +27,14 @@ export const DEFAULT_PROJECT_CONFIG = {
 
 // ---- projects ----
 
-export async function createProject(input: any) {
+export async function createProject(input: {
+	name: string
+	originPatterns: string[]
+	config?: Partial<SniffProjectConfig>
+}) {
 	const db = await getDB()
 	const now = Date.now()
-	const record = {
+	const record: SniffProject = {
 		id: crypto.randomUUID(),
 		name: input.name,
 		originPatterns: input.originPatterns,
@@ -40,19 +51,19 @@ export async function createProject(input: any) {
 	return record
 }
 
-export async function getProject(id: any): Promise<any> {
+export async function getProject(id: string): Promise<SniffProject | undefined> {
 	const db = await getDB()
 	return db.get('sniff_projects', id)
 }
 
 /** Newest first */
-export async function listProjects(): Promise<any[]> {
+export async function listProjects(): Promise<SniffProject[]> {
 	const db = await getDB()
 	const all = await db.getAllFromIndex('sniff_projects', 'by-updated')
 	return all.reverse()
 }
 
-export async function updateProject(id: any, patch: any) {
+export async function updateProject(id: string, patch: Partial<SniffProject>) {
 	const db = await getDB()
 	const existing = await db.get('sniff_projects', id)
 	if (!existing) throw new Error(`Project ${id} not found`)
@@ -62,14 +73,14 @@ export async function updateProject(id: any, patch: any) {
 }
 
 /** Deletes the project with its APIs, samples, specs and annotations. */
-export async function deleteProject(id: any) {
+export async function deleteProject(id: string) {
 	const db = await getDB()
 	const tx = db.transaction(
 		['sniff_projects', 'sniff_apis', 'sniff_samples', 'sniff_specs', 'sniff_annotations'],
 		'readwrite'
 	)
 	const apis = await tx.objectStore('sniff_apis').index('by-project').getAll(id)
-	const apiIds = apis.map((a: any) => a.id)
+	const apiIds = apis.map((a) => a.id)
 	for (const apiId of apiIds) {
 		const sampleKeys = await tx.objectStore('sniff_samples').index('by-api').getAllKeys(apiId)
 		for (const key of sampleKeys) {
@@ -91,24 +102,24 @@ export async function deleteProject(id: any) {
 
 // ---- apis ----
 
-export async function getApi(id: any): Promise<any> {
+export async function getApi(id: string): Promise<SniffApi | undefined> {
 	const db = await getDB()
 	return db.get('sniff_apis', id)
 }
 
 /** Returns the API with this method + normalized pattern, creating it on first sight. */
 export async function upsertApi(
-	projectId: any,
-	method: any,
-	urlPattern: any,
-	urlPatternTokens: any
-) {
+	projectId: string,
+	method: string,
+	urlPattern: string,
+	urlPatternTokens: string[]
+): Promise<SniffApi> {
 	const db = await getDB()
 	const apis = await db.getAllFromIndex('sniff_apis', 'by-project', projectId)
-	const hit = apis.find((a: any) => a.method === method && a.urlPattern === urlPattern)
+	const hit = apis.find((a) => a.method === method && a.urlPattern === urlPattern)
 	if (hit) return hit
 	const now = Date.now()
-	const record = {
+	const record: SniffApi = {
 		id: crypto.randomUUID(),
 		projectId,
 		method,
@@ -124,13 +135,13 @@ export async function upsertApi(
 }
 
 /** Most recently seen first */
-export async function listApisByProject(projectId: any): Promise<any[]> {
+export async function listApisByProject(projectId: string): Promise<SniffApi[]> {
 	const db = await getDB()
 	const apis = await db.getAllFromIndex('sniff_apis', 'by-project', projectId)
-	return apis.sort((a: any, b: any) => b.lastSeenAt - a.lastSeenAt)
+	return apis.sort((a, b) => b.lastSeenAt - a.lastSeenAt)
 }
 
-export async function updateApi(id: any, patch: any) {
+export async function updateApi(id: string, patch: Partial<SniffApi>) {
 	const db = await getDB()
 	const existing = await db.get('sniff_apis', id)
 	if (!existing) throw new Error(`Api ${id} not found`)
@@ -141,29 +152,29 @@ export async function updateApi(id: any, patch: any) {
 
 // ---- samples ----
 
-export async function putSample(sample: any) {
+export async function putSample(sample: SniffSample) {
 	const db = await getDB()
 	await db.put('sniff_samples', sample)
 }
 
 /** Newest first */
-export async function listSamplesByApi(apiId: any, limit = 20) {
+export async function listSamplesByApi(apiId: string, limit = 20) {
 	const db = await getDB()
 	const samples = await db.getAllFromIndex('sniff_samples', 'by-api', apiId)
-	return samples.sort((a: any, b: any) => b.timestamp - a.timestamp).slice(0, limit)
+	return samples.sort((a, b) => b.timestamp - a.timestamp).slice(0, limit)
 }
 
-export async function countSamplesByApi(apiId: any) {
+export async function countSamplesByApi(apiId: string) {
 	const db = await getDB()
 	return db.countFromIndex('sniff_samples', 'by-api', apiId)
 }
 
 /** Keeps the newest `keep` samples of the API; returns how many were deleted. */
-export async function trimSamplesByApi(apiId: any, keep: any) {
+export async function trimSamplesByApi(apiId: string, keep: number) {
 	const db = await getDB()
 	const all = await db.getAllFromIndex('sniff_samples', 'by-api', apiId)
 	if (all.length <= keep) return 0
-	const sorted = all.sort((a: any, b: any) => b.timestamp - a.timestamp)
+	const sorted = all.sort((a, b) => b.timestamp - a.timestamp)
 	const toDelete = sorted.slice(keep)
 	const tx = db.transaction('sniff_samples', 'readwrite')
 	for (const s of toDelete) {
@@ -175,19 +186,19 @@ export async function trimSamplesByApi(apiId: any, keep: any) {
 
 // ---- specs ----
 
-export async function putSpec(spec: any) {
+export async function putSpec(spec: SniffSpec) {
 	const db = await getDB()
 	await db.put('sniff_specs', spec)
 }
 
 /** Oldest version first */
-export async function listSpecsByApi(apiId: any): Promise<any[]> {
+export async function listSpecsByApi(apiId: string): Promise<SniffSpec[]> {
 	const db = await getDB()
 	const specs = await db.getAllFromIndex('sniff_specs', 'by-api', apiId)
-	return specs.sort((a: any, b: any) => a.version - b.version)
+	return specs.sort((a, b) => a.version - b.version)
 }
 
-export async function getLatestSpecByApi(apiId: any): Promise<any> {
+export async function getLatestSpecByApi(apiId: string): Promise<SniffSpec | undefined> {
 	const specs = await listSpecsByApi(apiId)
 	return specs.at(-1)
 }
@@ -195,23 +206,25 @@ export async function getLatestSpecByApi(apiId: any): Promise<any> {
 // ---- upstream MCP servers ----
 
 /** Most recently updated first */
-export async function listUpstreamMcpServers(): Promise<any[]> {
+export async function listUpstreamMcpServers(): Promise<UpstreamMcpServer[]> {
 	const db = await getDB()
 	const all = await db.getAllFromIndex('upstream_mcp_servers', 'by-updated')
 	return all.reverse()
 }
 
-export async function getUpstreamMcpServerByName(name: any): Promise<any> {
+export async function getUpstreamMcpServerByName(
+	name: string
+): Promise<UpstreamMcpServer | undefined> {
 	const db = await getDB()
 	return db.getFromIndex('upstream_mcp_servers', 'by-name', name)
 }
 
-export async function deleteUpstreamMcpServer(id: any) {
+export async function deleteUpstreamMcpServer(id: string) {
 	const db = await getDB()
 	await db.delete('upstream_mcp_servers', id)
 }
 
-export async function putUpstreamMcpServer(record: any) {
+export async function putUpstreamMcpServer(record: UpstreamMcpServer) {
 	const db = await getDB()
 	await db.put('upstream_mcp_servers', record)
 }

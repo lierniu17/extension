@@ -1,5 +1,10 @@
-// TODO(types)
 import { hasExposedApisForOrigin, listEnabledMcpServers } from './exposedApis'
+
+/** Which page-bridge APIs the current tab can use; decides what the prompt documents. */
+export interface BridgeAvailability {
+	hasSniffApis: boolean
+	mcpServers: Awaited<ReturnType<typeof listEnabledMcpServers>>
+}
 
 export const BRIDGE_APIS = [
 	{
@@ -53,7 +58,7 @@ return { count: users.length, fields: Object.keys(users[0] ?? {}), kvKey: 'users
 const users = await window.__pagenter.kv.get('users')`,
 	},
 ]
-export function selectBridgeApis(availability: any) {
+export function selectBridgeApis(availability: BridgeAvailability | undefined) {
 	if (!availability) return BRIDGE_APIS
 	const selected = []
 	for (const api of BRIDGE_APIS) {
@@ -63,7 +68,7 @@ export function selectBridgeApis(availability: any) {
 		if (api.name === 'window.__pagenter.mcp') {
 			if (availability.mcpServers.length === 0) continue
 			const list = availability.mcpServers
-				.map((s: any) => `\`${s.name}\` (tools: ${s.tools === '*' ? 'all' : s.tools.join(', ')})`)
+				.map((s) => `\`${s.name}\` (tools: ${s.tools === '*' ? 'all' : s.tools.join(', ')})`)
 				.join('; ')
 			selected.push({
 				...api,
@@ -76,7 +81,7 @@ Available servers: ${list}.`,
 	}
 	return selected
 }
-export function serializeBridgeApisForPrompt(availability: any) {
+export function serializeBridgeApisForPrompt(availability: BridgeAvailability | undefined) {
 	return selectBridgeApis(availability)
 		.map((api) => {
 			const parts = [`### \`${api.signature}\``, '', api.description]
@@ -87,11 +92,11 @@ export function serializeBridgeApisForPrompt(availability: any) {
 		})
 		.join('\n\n')
 }
-export function injectBridgeApis(prompt: any, availability?: any) {
+export function injectBridgeApis(prompt: string, availability?: BridgeAvailability) {
 	if (!prompt.includes('{{BRIDGE_APIS}}')) return prompt
 	return prompt.replace('{{BRIDGE_APIS}}', serializeBridgeApisForPrompt(availability))
 }
-export async function probeBridgeAvailability() {
+export async function probeBridgeAvailability(): Promise<BridgeAvailability> {
 	try {
 		const [tab] = await chrome.tabs.query({
 			active: true,

@@ -1,4 +1,3 @@
-// TODO(types)
 // Sniff schema inference: folds observed JSON values into a JSON Schema,
 // annotated with x- fields (sample count, confidence, examples, enum
 // candidates, field presence). Runs in the offscreen document.
@@ -7,7 +6,33 @@ const MAX_EXAMPLES = 5
 const MAX_ENUM_CANDIDATES = 20
 const MAX_SAMPLE_STRING_LENGTH = 120
 
-export type InferredSchema = Record<string, any>
+/** A JSON type name as used in the schema's `type`. */
+export type JsonType = 'null' | 'array' | 'string' | 'boolean' | 'integer' | 'number' | 'object'
+
+/** A JSON Schema node plus the `x-` annotations the inference keeps. */
+export interface InferredSchema {
+	type?: string
+	anyOf?: InferredSchema[]
+	items?: InferredSchema
+	properties?: Record<string, InferredSchema>
+	required?: string[]
+	enum?: unknown[]
+	minLength?: number
+	maxLength?: number
+	minimum?: number
+	maximum?: number
+	minItems?: number
+	maxItems?: number
+	'x-sample-count'?: number
+	/** `low` / `medium` / `high` by sample count. */
+	'x-confidence'?: string
+	'x-examples'?: unknown[]
+	/** `null` once there were too many distinct values to be an enum. */
+	'x-enum-candidates'?: unknown[] | null
+	'x-object-observed'?: number
+	'x-field-seen'?: number
+	'x-presence-rate'?: number
+}
 
 function incrementSampleCount(schema: InferredSchema) {
 	const prev = typeof schema['x-sample-count'] === 'number' ? schema['x-sample-count'] : 0
@@ -20,20 +45,20 @@ function computeConfidence(sampleCount: number) {
 	return 'low'
 }
 
-function appendExample(schema: InferredSchema, value: any) {
-	const arr = Array.isArray(schema['x-examples']) ? schema['x-examples'] : []
+function appendExample(schema: InferredSchema, value: unknown) {
+	const arr: unknown[] = Array.isArray(schema['x-examples']) ? schema['x-examples'] : []
 	let v = value
 	if (typeof v === 'string' && v.length > MAX_SAMPLE_STRING_LENGTH) {
 		v = v.slice(0, MAX_SAMPLE_STRING_LENGTH) + '…'
 	}
 	const serialized = safeStringify(v)
-	if (arr.some((e: any) => safeStringify(e) === serialized)) return
+	if (arr.some((e) => safeStringify(e) === serialized)) return
 	arr.push(v)
 	if (arr.length > MAX_EXAMPLES) arr.shift()
 	schema['x-examples'] = arr
 }
 
-function safeStringify(v: any) {
+function safeStringify(v: unknown) {
 	try {
 		return JSON.stringify(v)
 	} catch {
@@ -41,7 +66,7 @@ function safeStringify(v: any) {
 	}
 }
 
-function getJsonType(value: any) {
+function getJsonType(value: unknown): JsonType {
 	if (value === null) return 'null'
 	if (Array.isArray(value)) return 'array'
 	const t = typeof value
@@ -54,7 +79,7 @@ function getJsonType(value: any) {
 }
 
 /** Fold one observed value into the schema (`null` = nothing observed yet). */
-export function mergeSample(current: InferredSchema | null, value: any): InferredSchema {
+export function mergeSample(current: InferredSchema | null, value: unknown): InferredSchema {
 	const valueType = getJsonType(value)
 	if (!current) {
 		return createFreshSchema(value)
@@ -72,7 +97,7 @@ export function mergeSample(current: InferredSchema | null, value: any): Inferre
 		anyOf: [current, newBranch],
 		'x-sample-count': prevCount + 1,
 	}
-	combined['x-confidence'] = computeConfidence(combined['x-sample-count'])
+	combined['x-confidence'] = computeConfidence(combined['x-sample-count']!)
 	return combined
 }
 
@@ -89,7 +114,7 @@ function typesCompatible(a: string | null, b: string) {
 	return false
 }
 
-function createFreshSchema(value: any): InferredSchema {
+function createFreshSchema(value: unknown): InferredSchema {
 	const type = getJsonType(value)
 	const s: InferredSchema = { type }
 	s['x-sample-count'] = 1
@@ -109,7 +134,7 @@ function createFreshSchema(value: any): InferredSchema {
 		}
 	}
 	if (type === 'array') {
-		const arr = value as any[]
+		const arr = value as unknown[]
 		let itemsSchema: InferredSchema | null = null
 		for (const el of arr) {
 			itemsSchema = mergeSample(itemsSchema, el)
@@ -119,7 +144,7 @@ function createFreshSchema(value: any): InferredSchema {
 		s.maxItems = arr.length
 	}
 	if (type === 'object') {
-		const obj = value as Record<string, any>
+		const obj = value as Record<string, unknown>
 		const properties: Record<string, InferredSchema> = {}
 		const required: string[] = []
 		for (const [k, v] of Object.entries(obj)) {
@@ -133,9 +158,9 @@ function createFreshSchema(value: any): InferredSchema {
 	return s
 }
 
-function mergeIntoMonoType(schema: InferredSchema, value: any, valueType: string) {
+function mergeIntoMonoType(schema: InferredSchema, value: unknown, valueType: string) {
 	incrementSampleCount(schema)
-	schema['x-confidence'] = computeConfidence(schema['x-sample-count'])
+	schema['x-confidence'] = computeConfidence(schema['x-sample-count']!)
 	const currentType = schemaMainType(schema)
 	if (currentType === 'integer' && valueType === 'number') {
 		schema.type = 'number'
@@ -143,14 +168,14 @@ function mergeIntoMonoType(schema: InferredSchema, value: any, valueType: string
 	if (valueType === 'string' || valueType === 'number' || valueType === 'integer' || valueType === 'boolean') {
 		mergePrimitive(schema, value, valueType)
 	} else if (valueType === 'array') {
-		mergeArray(schema, value)
+		mergeArray(schema, value as unknown[])
 	} else if (valueType === 'object') {
-		mergeObjectFields(schema, value)
+		mergeObjectFields(schema, value as Record<string, unknown>)
 	}
 	return schema
 }
 
-function mergePrimitive(schema: InferredSchema, value: any, valueType: string) {
+function mergePrimitive(schema: InferredSchema, value: unknown, valueType: string) {
 	appendExample(schema, value)
 	updateEnumCandidates(schema, value)
 	if (valueType === 'string') {
@@ -169,7 +194,7 @@ function mergePrimitive(schema: InferredSchema, value: any, valueType: string) {
 	}
 }
 
-function mergeArray(schema: InferredSchema, arr: any[]) {
+function mergeArray(schema: InferredSchema, arr: unknown[]) {
 	let items: InferredSchema | null = schema.items ?? null
 	for (const el of arr) {
 		items = mergeSample(items, el)
@@ -181,7 +206,7 @@ function mergeArray(schema: InferredSchema, arr: any[]) {
 	schema.maxItems = Math.max(prevMax, arr.length)
 }
 
-function mergeObjectFields(schema: InferredSchema, obj: Record<string, any>) {
+function mergeObjectFields(schema: InferredSchema, obj: Record<string, unknown>) {
 	const properties: Record<string, InferredSchema> = schema.properties ?? {}
 	const required: string[] = Array.isArray(schema.required) ? [...schema.required] : []
 	const observed =
@@ -220,12 +245,12 @@ function mergeObjectFields(schema: InferredSchema, obj: Record<string, any>) {
 	schema.required = required
 }
 
-function updateEnumCandidates(schema: InferredSchema, value: any) {
+function updateEnumCandidates(schema: InferredSchema, value: unknown) {
 	if (typeof value === 'boolean') return
-	const candidates = Array.isArray(schema['x-enum-candidates']) ? schema['x-enum-candidates'] : []
+	const candidates: unknown[] = Array.isArray(schema['x-enum-candidates']) ? schema['x-enum-candidates'] : []
 	if (schema['x-enum-candidates'] === null) return
 	const serialized = safeStringify(value)
-	const exists = candidates.some((c: any) => safeStringify(c) === serialized)
+	const exists = candidates.some((c) => safeStringify(c) === serialized)
 	if (!exists) candidates.push(value)
 	if (candidates.length > MAX_ENUM_CANDIDATES) {
 		schema['x-enum-candidates'] = null
@@ -238,10 +263,10 @@ function updateEnumCandidates(schema: InferredSchema, value: any) {
 	}
 }
 
-function mergeIntoAnyOf(schema: InferredSchema, value: any, valueType: string) {
+function mergeIntoAnyOf(schema: InferredSchema, value: unknown, valueType: string) {
 	incrementSampleCount(schema)
-	schema['x-confidence'] = computeConfidence(schema['x-sample-count'])
-	const branches: InferredSchema[] = schema.anyOf
+	schema['x-confidence'] = computeConfidence(schema['x-sample-count']!)
+	const branches: InferredSchema[] = schema.anyOf!
 	let matched = false
 	for (let i = 0; i < branches.length; i++) {
 		const b = branches[i]
@@ -270,14 +295,14 @@ export function structuralHash(schema: InferredSchema | null) {
 	return h.toString(16)
 }
 
-function normalizeForHash(node: any): any {
+function normalizeForHash(node: unknown): unknown {
 	if (node === null || typeof node !== 'object') return node
 	if (Array.isArray(node)) return node.map(normalizeForHash)
-	const out: Record<string, any> = {}
+	const out: Record<string, unknown> = {}
 	const keys = Object.keys(node).sort((a, b) => a.localeCompare(b))
 	for (const k of keys) {
 		if (k.startsWith('x-')) continue
-		const v = node[k]
+		const v = (node as Record<string, unknown>)[k]
 		if ((k === 'required' || k === 'enum') && Array.isArray(v)) {
 			const normalized = v.map((x) => (typeof x === 'object' ? normalizeForHash(x) : x))
 			out[k] = [...normalized].sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))

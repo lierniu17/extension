@@ -1,4 +1,3 @@
-// TODO(types)
 /**
  * Element picker (内容脚本里的浮层): hover to highlight, click to pick.
  * Sends ELEMENT_PICKED with the CSS selector, XPath and a snapshot of the element,
@@ -18,7 +17,7 @@ interface PickerOptions {
 
 const SELF_ELEMENT_IDS = new Set([OVERLAY_ID, TOOLTIP_ID, HINT_ID, FLASH_ID])
 let active = false
-let currentTarget: any = null
+let currentTarget: Element | null = null
 let activeOptions: PickerOptions = {}
 function ensureStyles() {
 	if (document.getElementById(STYLE_ID)) return
@@ -260,7 +259,7 @@ function extractElementData(el: Element) {
 function generateCSSSelector(el: Element): string {
 	if (el.id) return `#${CSS.escape(el.id)}`
 	const parts: string[] = []
-	let current: any = el
+	let current: Element | null = el
 	while (current && current !== document.body && parts.length < 5) {
 		let selector = current.tagName.toLowerCase()
 		if (current.id) {
@@ -275,7 +274,7 @@ function generateCSSSelector(el: Element): string {
 		}
 		const parent = current.parentElement
 		if (parent) {
-			const siblings = [...parent.children].filter((s) => s.tagName === current.tagName)
+			const siblings = [...parent.children].filter((s) => s.tagName === current!.tagName)
 			if (siblings.length > 1) {
 				const idx = siblings.indexOf(current) + 1
 				selector += `:nth-of-type(${idx})`
@@ -288,9 +287,9 @@ function generateCSSSelector(el: Element): string {
 }
 function generateXPath(el: Element): string {
 	const parts: string[] = []
-	let current: any = el
+	let current: Node | null = el
 	while (current && current.nodeType === 1) {
-		const element = current
+		const element = current as Element
 		let step = element.tagName.toLowerCase()
 		if (element.id) {
 			parts.unshift(`//${step}[@id="${element.id}"]`)
@@ -299,10 +298,10 @@ function generateXPath(el: Element): string {
 		const parent = element.parentNode
 		if (parent) {
 			const siblings = [...parent.childNodes].filter(
-				(n) => n.nodeType === 1 && n.tagName === element.tagName
+				(n) => n.nodeType === 1 && (n as Element).tagName === element.tagName
 			)
 			if (siblings.length > 1) {
-				const idx = siblings.indexOf(element) + 1
+				const idx = siblings.indexOf(element as ChildNode) + 1
 				step += `[${idx}]`
 			}
 		}
@@ -313,7 +312,7 @@ function generateXPath(el: Element): string {
 }
 function getParentChain(el: Element): string[] {
 	const chain: string[] = []
-	let current: any = el.parentElement
+	let current: Element | null = el.parentElement
 	while (current && current !== document.documentElement && chain.length < 8) {
 		const tag = current.tagName.toLowerCase()
 		const id = current.id ? `#${current.id}` : ''

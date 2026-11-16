@@ -1,4 +1,5 @@
-// TODO(types)
+import type { PageControlMessage } from '@/lib/messages'
+
 /**
  * background logics for RemotePageController
  * - redirect messages from RemotePageController(Agent, extension pages) to ContentScript
@@ -6,7 +7,7 @@
  */
 
 export function handlePageControlMessage(
-	message: { type: 'PAGE_CONTROL'; action: string; payload: any; targetTabId: number },
+	message: PageControlMessage,
 	sender: chrome.runtime.MessageSender,
 	sendResponse: (response: unknown) => void
 ): true | undefined {
@@ -23,7 +24,7 @@ export function handlePageControlMessage(
 	}
 
 	// proxy to content script
-	sendPageControlMessage(targetTabId, action, payload)
+	sendPageControlMessage(targetTabId!, action, payload)
 		.then((result) => {
 			sendResponse(result)
 		})
@@ -54,7 +55,11 @@ export function handlePageControlMessage(
  * Tabs opened before the extension was (re)loaded have no content script.
  * On "Receiving end does not exist", inject it and retry once.
  */
-async function sendPageControlMessage(tabId: number, action: string, payload: any) {
+async function sendPageControlMessage(
+	tabId: number,
+	action: PageControlMessage['action'],
+	payload: PageControlMessage['payload']
+): Promise<unknown> {
 	try {
 		return await chrome.tabs.sendMessage(tabId, {
 			type: 'PAGE_CONTROL',

@@ -4,6 +4,7 @@ import { Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { useI18n } from '@/i18n'
+import type { UpstreamMcpServer } from '@/lib/dbSchema'
 import {
 	deleteUpstreamMcpServer,
 	listUpstreamMcpServers,
@@ -124,7 +125,7 @@ function UpstreamMcpCard({ onChanged }: any) {
 	const createNew = async () => {
 		const id = crypto.randomUUID()
 		const now = Date.now()
-		const record = {
+		const record: UpstreamMcpServer = {
 			id,
 			name: `Server ${servers.length + 1}`,
 			transport: 'stdio',

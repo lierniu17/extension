@@ -1,6 +1,31 @@
-// TODO(types)
 // Chrome DevTools Protocol access shared by the background (attaches directly)
 // and extension pages (go through the background proxy).
+import type { CdpProxyMessage, CdpProxyResponse } from '@/lib/messages'
+
+/** Parameters of one CDP command (untyped JSON). */
+export type CdpParams = { [key: string]: unknown }
+
+/** Options of one CDP command; `pin: false` lets the debugger detach when no lease is left. */
+export interface CdpSendOptions {
+	pin?: boolean
+}
+
+/**
+ * Sends one CDP command. The result type is the caller's claim about the
+ * command's return value (CDP results are untyped JSON).
+ */
+export type CdpSendFn = <T = unknown>(
+	tabId: number,
+	method: string,
+	params?: CdpParams,
+	options?: CdpSendOptions
+) => Promise<T>
+
+export type CdpEventListener = (
+	source: chrome.debugger.Debuggee,
+	method: string,
+	params?: object
+) => void
 
 const PREFIX = '[cdp]'
 const debug = console.debug.bind(console, `\x1B[90m${PREFIX}\x1B[0m`)
@@ -8,11 +33,11 @@ const warn = console.warn.bind(console, `\x1B[33m${PREFIX}\x1B[0m`)
 const RESTRICTED_URL_RE = /^(chrome|chrome-extension|about|edge|brave|opera|vivaldi|devtools):\/\//
 const IS_BACKGROUND = typeof window === 'undefined'
 const CTX = IS_BACKGROUND ? 'bg' : 'remote'
-const attachedTabs = new Set()
-const leaseRefs = new Map()
-const ambientPins = new Set()
-const externallyOwnedTabs = new Set()
-const eventListeners = new Set<(source: any, method: any, params: any) => void>()
+const attachedTabs = new Set<number>()
+const leaseRefs = new Map<number, number>()
+const ambientPins = new Set<number>()
+const externallyOwnedTabs = new Set<number>()
+const eventListeners = new Set<CdpEventListener>()
 let onDetachInstalled = false
 let onEventInstalled = false
 function ensureOnDetachInstalled() {
@@ -41,7 +66,7 @@ function ensureOnEventInstalled() {
 		}
 	})
 }
-async function tryReuseExistingAttach(tabId: any, attachError: any) {
+async function tryReuseExistingAttach(tabId: number, attachError: string) {
 	if (!attachError.includes('Another debugger is already attached')) return false
 	try {
 		await chrome.debugger.sendCommand({ tabId }, 'Runtime.enable')
@@ -53,7 +78,7 @@ async function tryReuseExistingAttach(tabId: any, attachError: any) {
 		return false
 	}
 }
-async function physicalAttach(tabId: any) {
+async function physicalAttach(tabId: number) {
 	ensureOnDetachInstalled()
 	const tab = await chrome.tabs.get(tabId).catch(() => null)
 	if (!tab) throw new Error(`Tab ${tabId} no longer exists`)
@@ -65,7 +90,7 @@ async function physicalAttach(tabId: any) {
 		attachedTabs.add(tabId)
 		externallyOwnedTabs.delete(tabId)
 		debug(`[${CTX}] attached tab=${tabId}`)
-	} catch (error: any) {
+	} catch (error) {
 		const msg = error instanceof Error ? error.message : String(error)
 		if (msg.includes('Already attached')) {
 			attachedTabs.add(tabId)
@@ -76,7 +101,7 @@ async function physicalAttach(tabId: any) {
 		throw new Error(`Failed to attach debugger to tab ${tabId}: ${msg}`)
 	}
 }
-async function physicalDetach(tabId: any) {
+async function physicalDetach(tabId: number) {
 	if (!attachedTabs.has(tabId)) return
 	attachedTabs.delete(tabId)
 	try {
@@ -85,14 +110,14 @@ async function physicalDetach(tabId: any) {
 	} catch {
 	}
 }
-async function tryPhysicalDetach(tabId: any) {
+async function tryPhysicalDetach(tabId: number) {
 	if (ambientPins.has(tabId)) return
 	if ((leaseRefs.get(tabId) ?? 0) > 0) return
 	if (externallyOwnedTabs.has(tabId)) return
 	await physicalDetach(tabId)
 }
 /** Reference-counted attach: every lease keeps the debugger attached. */
-export async function acquireCdpTab(tabId: any) {
+export async function acquireCdpTab(tabId: number) {
 	const next = (leaseRefs.get(tabId) ?? 0) + 1
 	leaseRefs.set(tabId, next)
 	if (!attachedTabs.has(tabId)) {
@@ -107,7 +132,7 @@ export async function acquireCdpTab(tabId: any) {
 	debug(`[${CTX}] acquire tab=${tabId} leases=${next}`)
 }
 /** Drops one lease; the last one detaches unless the tab is pinned or owned elsewhere. */
-export async function releaseCdpTab(tabId: any) {
+export async function releaseCdpTab(tabId: number) {
 	const cur = leaseRefs.get(tabId) ?? 0
 	if (cur <= 0) {
 		debug(`[${CTX}] release tab=${tabId} ignored (no lease)`)
@@ -119,24 +144,29 @@ export async function releaseCdpTab(tabId: any) {
 	debug(`[${CTX}] release tab=${tabId} leases=${next}`)
 	await tryPhysicalDetach(tabId)
 }
-export async function ensureCdpAttachedLocal(tabId: any, pinOnAttach = false) {
+export async function ensureCdpAttachedLocal(tabId: number, pinOnAttach = false) {
 	if (!attachedTabs.has(tabId)) {
 		await physicalAttach(tabId)
 	}
 	if (pinOnAttach) ambientPins.add(tabId)
 }
-export async function cdpSendLocal(tabId: any, method: any, params?: any, options?: any) {
+export async function cdpSendLocal<T = unknown>(
+	tabId: number,
+	method: string,
+	params?: CdpParams,
+	options?: CdpSendOptions
+): Promise<T> {
 	await ensureCdpAttachedLocal(tabId, options?.pin !== false)
-	return chrome.debugger.sendCommand({ tabId }, method, params)
+	return chrome.debugger.sendCommand({ tabId }, method, params) as Promise<T>
 }
-async function callBackgroundProxy(payload: any) {
-	let res
+async function callBackgroundProxy(payload: Omit<CdpProxyMessage, 'type'>) {
+	let res: CdpProxyResponse | undefined
 	try {
-		res = await chrome.runtime.sendMessage({
+		res = await chrome.runtime.sendMessage<CdpProxyMessage, CdpProxyResponse>({
 			type: 'CDP_PROXY',
 			...payload,
 		})
-	} catch (err: any) {
+	} catch (err) {
 		throw new Error(
 			`CDP proxy: background unreachable (${err instanceof Error ? err.message : String(err)})`
 		)
@@ -145,7 +175,12 @@ async function callBackgroundProxy(payload: any) {
 	if (res.error) throw new Error(res.error)
 	return res.result
 }
-export async function cdpSendRemote(tabId: any, method: any, params?: any, options?: any) {
+export async function cdpSendRemote<T = unknown>(
+	tabId: number,
+	method: string,
+	params?: CdpParams,
+	options?: CdpSendOptions
+): Promise<T> {
 	const start = performance.now()
 	try {
 		const result = await callBackgroundProxy({
@@ -157,27 +192,27 @@ export async function cdpSendRemote(tabId: any, method: any, params?: any, optio
 		})
 		const dur = (performance.now() - start) | 0
 		if (dur > 500) debug(`[${CTX}] ← ${method} tab=${tabId} (${dur}ms slow)`)
-		return result
-	} catch (err: any) {
+		return result as T
+	} catch (err) {
 		warn(`[${CTX}] ✗ ${method} tab=${tabId}: ${err instanceof Error ? err.message : err}`)
 		throw err
 	}
 }
-async function cdpDetachRemote(tabId: any) {
+async function cdpDetachRemote(tabId: number) {
 	debug(`[${CTX}] → detach tab=${tabId}`)
 	await callBackgroundProxy({ action: 'detach', tabId })
 }
-function addCdpEventListenerRemote(_listener: any) {
+function addCdpEventListenerRemote(_listener: CdpEventListener) {
 	warn(`[${CTX}] addCdpEventListener is background-only; ignored in this context`)
 	return () => {}
 }
-function addCdpEventListenerLocal(listener: any) {
+function addCdpEventListenerLocal(listener: CdpEventListener) {
 	ensureOnEventInstalled()
 	eventListeners.add(listener)
 	return () => eventListeners.delete(listener)
 }
 /** Background side of the CDP proxy that extension pages call. */
-export async function handleCdpProxyMessage(message: any) {
+export async function handleCdpProxyMessage(message: CdpProxyMessage): Promise<CdpProxyResponse> {
 	if (!IS_BACKGROUND) {
 		return { error: 'handleCdpProxyMessage must run in background' }
 	}
@@ -210,10 +245,10 @@ export async function handleCdpProxyMessage(message: any) {
 		return { error: msg }
 	}
 }
-export const cdpSend = IS_BACKGROUND ? cdpSendLocal : cdpSendRemote
+export const cdpSend: CdpSendFn = IS_BACKGROUND ? cdpSendLocal : cdpSendRemote
 export const cdpAcquire = IS_BACKGROUND
 	? acquireCdpTab
-	: async (tabId: any) => {
+	: async (tabId: number) => {
 			debug(`[${CTX}] → acquire tab=${tabId}`)
 			await callBackgroundProxy({ action: 'attach', tabId })
 		}
@@ -222,7 +257,7 @@ export const addCdpEventListener = IS_BACKGROUND
 	? addCdpEventListenerLocal
 	: addCdpEventListenerRemote
 const DEFAULT_EVAL_TIMEOUT_MS = 6e4
-export function wrapScriptForEval(rawScript: any, opts?: any) {
+export function wrapScriptForEval(rawScript: string, opts?: unknown) {
 	const withoutLeadingComments = rawScript.replace(/^(?:\s*\/\/[^\n]*\n)+/, '')
 	const trimmed = withoutLeadingComments.trim()
 	const looksLikeIife =
@@ -241,9 +276,9 @@ export function wrapScriptForEval(rawScript: any, opts?: any) {
 		)), ${timeoutMs}))
 	])`
 }
-function isBalancedParens(s: any) {
+function isBalancedParens(s: string) {
 	let depth = 0
-	let inStr: any = null
+	let inStr: string | null = null
 	let inTpl = false
 	for (let i = 0; i < s.length; i++) {
 		const c = s[i]
@@ -290,8 +325,13 @@ function isBalancedParens(s: any) {
 	}
 	return depth === 0
 }
-export async function cdpEval(tabId: any, expression: any) {
-	const result = await cdpSend(tabId, 'Runtime.evaluate', {
+/** The fields of CDP `Runtime.evaluate`'s result that cdpEval reads. */
+interface RuntimeEvaluateResult {
+	result?: { value?: unknown }
+	exceptionDetails?: { text?: string; exception?: { description?: string } }
+}
+export async function cdpEval(tabId: number, expression: string) {
+	const result = await cdpSend<RuntimeEvaluateResult>(tabId, 'Runtime.evaluate', {
 		expression,
 		awaitPromise: true,
 		returnByValue: true,

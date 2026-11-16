@@ -1,8 +1,13 @@
-// TODO(types)
 import chalk from 'chalk'
 
+import type { ChatRequestBody, TokenLimitParam } from './types'
+
 const debug = console.debug.bind(console, chalk.gray('[LLM]'))
-export function applyTokenLimit(body: any, maxTokens: any, param: any) {
+export function applyTokenLimit(
+	body: ChatRequestBody,
+	maxTokens: number | null | undefined,
+	param: TokenLimitParam
+) {
 	if (maxTokens == null || maxTokens <= 0) return
 	if (param === 'max_completion_tokens') {
 		body.max_completion_tokens = maxTokens
@@ -12,7 +17,7 @@ export function applyTokenLimit(body: any, maxTokens: any, param: any) {
 		body.max_tokens = maxTokens
 	}
 }
-export function isUnsupportedTokenParamError(message: any) {
+export function isUnsupportedTokenParamError(message: string | null | undefined) {
 	if (!message) return false
 	const lower = message.toLowerCase()
 	if (!lower.includes('max_tokens') && !lower.includes('max_completion_tokens')) return false
@@ -27,7 +32,7 @@ export function isUnsupportedTokenParamError(message: any) {
 		lower.includes('use max_tokens')
 	)
 }
-export function modelPatch(body: any) {
+export function modelPatch(body: ChatRequestBody) {
 	const model = body.model || ''
 	if (!model) return body
 	const modelName = normalizeModelName(model)
@@ -77,7 +82,7 @@ export function modelPatch(body: any) {
 	}
 	return body
 }
-function normalizeModelName(modelName: any) {
+function normalizeModelName(modelName: string) {
 	let normalizedName = modelName.toLowerCase()
 	if (normalizedName.includes('/')) {
 		normalizedName = normalizedName.split('/')[1]

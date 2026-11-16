@@ -1,4 +1,3 @@
-// TODO(types)
 /**
  * Core types for LLM integration.
  *
@@ -32,8 +31,23 @@ export interface CompletionResult {
 		cachedTokens?: number
 		reasoningTokens?: number
 	}
-	rawResponse?: any
-	rawRequest?: any
+	/** Parsed JSON body of the API response. */
+	rawResponse?: unknown
+	/** The request body that was sent. */
+	rawRequest?: ChatRequestBody
+}
+
+/**
+ * Body of a `/chat/completions` request. Model patches and the token limit
+ * write vendor-specific fields onto it.
+ */
+export interface ChatRequestBody {
+	model: string
+	messages: unknown[]
+	temperature?: number
+	max_tokens?: number
+	max_completion_tokens?: number
+	[field: string]: unknown
 }
 
 /** LLM configuration */

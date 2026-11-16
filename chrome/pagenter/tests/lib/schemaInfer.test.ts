@@ -34,8 +34,8 @@ describe('mergeSample: first value', () => {
 		const s = mergeSample(null, { id: 1, name: 'x', tags: ['a', 'b'] })
 		expect(s.type).toBe('object')
 		expect(s.required).toEqual(['id', 'name', 'tags'])
-		expect(s.properties.id).toMatchObject({ type: 'integer' })
-		expect(s.properties.tags).toMatchObject({
+		expect(s.properties!.id).toMatchObject({ type: 'integer' })
+		expect(s.properties!.tags).toMatchObject({
 			type: 'array',
 			minItems: 2,
 			maxItems: 2,

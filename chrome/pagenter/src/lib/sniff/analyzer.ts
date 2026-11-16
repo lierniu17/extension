@@ -1,4 +1,3 @@
-// TODO(types)
 // Sniff analyzer (runs in the offscreen document): stores each sample, keeps
 // the API / project counters up to date and merges the sample into the API's
 // inferred input / output Schema, creating a new spec version when the
@@ -14,6 +13,7 @@ import {
 	updateApi,
 	updateProject,
 } from '@/lib/sniff/db'
+import type { SniffBody, SniffSample, SniffSpec } from '@/lib/dbSchema'
 import { type InferredSchema, mergeSample, structuralHash } from '@/lib/sniff/schemaInfer'
 
 // Samples of one API are processed strictly in order (read-modify-write of its spec).
@@ -28,13 +28,13 @@ function enqueueForApi(apiId: string, task: () => Promise<void>) {
 	return next
 }
 
-export function ingestSample(sample: any) {
+export function ingestSample(sample: SniffSample) {
 	return enqueueForApi(sample.apiId, async () => {
 		await processSample(sample)
 	})
 }
 
-async function processSample(sample: any) {
+async function processSample(sample: SniffSample) {
 	await putSample(sample)
 	const api = await getApi(sample.apiId)
 	if (!api) {
@@ -64,7 +64,7 @@ async function processSample(sample: any) {
 	}
 }
 
-async function updateSpecFromSample(sample: any) {
+async function updateSpecFromSample(sample: SniffSample) {
 	const inputValue = decodeInput(sample)
 	const outputValue = decodeBody(sample.resBody)
 	if (inputValue === UNDECODABLE && outputValue === UNDECODABLE) return
@@ -82,7 +82,7 @@ async function updateSpecFromSample(sample: any) {
 	const confidence = confidenceByCount(sampleCount)
 
 	if (!latest || structuralChanged) {
-		const record = {
+		const record: SniffSpec = {
 			id: crypto.randomUUID(),
 			apiId: sample.apiId,
 			version: (latest?.version ?? 0) + 1,
@@ -96,7 +96,7 @@ async function updateSpecFromSample(sample: any) {
 		await putSpec(record)
 		await updateApi(sample.apiId, { currentSpecId: record.id })
 	} else {
-		const updated = {
+		const updated: SniffSpec = {
 			...latest,
 			inputSchema: nextInput,
 			outputSchema: nextOutput,
@@ -127,7 +127,7 @@ function confidenceByCount(count: number) {
 const UNDECODABLE = Symbol('undecodable')
 
 /** JSON (or untyped JSON-looking) and form bodies decode to values; anything else is UNDECODABLE. */
-function decodeBody(body: any): any {
+function decodeBody(body: SniffBody | null): unknown {
 	if (!body) return UNDECODABLE
 	if (body.encoding === 'base64') return UNDECODABLE
 	const mime = (body.mimeType ?? '').toLowerCase()
@@ -156,7 +156,7 @@ function decodeBody(body: any): any {
 }
 
 /** Request input = body fields plus the query string under `__query`. */
-function decodeInput(sample: any): any {
+function decodeInput(sample: SniffSample): unknown {
 	let queryObj: Record<string, string> | null = null
 	try {
 		const u = new URL(sample.url)

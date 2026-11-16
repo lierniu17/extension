@@ -1,18 +1,17 @@
-// TODO(types)
 import chalk from 'chalk'
 
 export * from './autoFixer'
 
-export async function waitFor(seconds: any) {
+export async function waitFor(seconds: number) {
 	await new Promise((resolve) => setTimeout(resolve, seconds * 1e3))
 }
-export function truncate(text: any, maxLength: any) {
+export function truncate(text: string, maxLength: number) {
 	if (text.length > maxLength) {
 		return text.substring(0, maxLength) + '...'
 	}
 	return text
 }
-export function randomID(existingIDs: any) {
+export function randomID(existingIDs?: string[]) {
 	let id = Math.random().toString(36).substring(2, 11)
 	if (!existingIDs) {
 		return id
@@ -28,18 +27,18 @@ export function randomID(existingIDs: any) {
 	}
 	return id
 }
-const _global = globalThis as any
+const _global = globalThis as typeof globalThis & { __PAGE_AGENT_IDS__?: string[] }
 if (!_global.__PAGE_AGENT_IDS__) {
 	_global.__PAGE_AGENT_IDS__ = []
 }
-const ids = _global.__PAGE_AGENT_IDS__
+const ids = _global.__PAGE_AGENT_IDS__!
 export function uid() {
 	const id = randomID(ids)
 	ids.push(id)
 	return id
 }
-const llmsTxtCache = new Map()
-export async function fetchLlmsTxt(url: any) {
+const llmsTxtCache = new Map<string, string | null>()
+export async function fetchLlmsTxt(url: string): Promise<string | null | undefined> {
 	let origin
 	try {
 		origin = new URL(url).origin
@@ -49,7 +48,7 @@ export async function fetchLlmsTxt(url: any) {
 	if (origin === 'null') return null
 	if (llmsTxtCache.has(origin)) return llmsTxtCache.get(origin)
 	const endpoint = `${origin}/llms.txt`
-	let result: any = null
+	let result: string | null = null
 	try {
 		console.log(chalk.gray(`[llms.txt] Fetching ${endpoint}`))
 		const res = await fetch(endpoint, { signal: AbortSignal.timeout(3e3) })
@@ -63,7 +62,7 @@ export async function fetchLlmsTxt(url: any) {
 		} else {
 			console.debug(chalk.gray(`[llms.txt] ${res.status} for ${endpoint}`))
 		}
-	} catch (e: any) {
+	} catch (e) {
 		console.debug(chalk.gray(`[llms.txt] not found for ${endpoint}`), e)
 	}
 	llmsTxtCache.set(origin, result)

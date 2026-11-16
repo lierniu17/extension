@@ -1,16 +1,26 @@
-// TODO(types)
+import type { PageControlAction, PageControlMessage } from '@/lib/messages'
+import type { ActionResult, BrowserState, PageController } from '@/page-controller/PageController'
+
+import type { TabsController } from './TabsController'
+
+/**
+ * The content script's answer. On a messaging failure sendMessage logs and
+ * resolves `null` instead; it is typed without `null` because the callers (as
+ * in the bundle, and PageAgentCore's tools) use the answer without a null check.
+ */
+type PageControlAnswer<T> = Promise<T>
 
 const PREFIX = '[RemotePageController]'
 const debug = console.debug.bind(console, `\x1B[90m${PREFIX}\x1B[0m`)
-function sendMessage(message: any) {
+function sendMessage<T>(message: PageControlMessage): PageControlAnswer<T> {
 	return chrome.runtime.sendMessage(message).catch((error) => {
 		console.error(PREFIX, message.action, error)
 		return null
 	})
 }
 export class RemotePageController {
-	tabsController: any
-	constructor(tabsController: any) {
+	tabsController: TabsController
+	constructor(tabsController: TabsController) {
 		this.tabsController = tabsController
 	}
 	get currentTabId() {
@@ -28,17 +38,17 @@ export class RemotePageController {
 	}
 	async getLastUpdateTime() {
 		if (!this.currentTabId) throw new Error('tabsController not initialized.')
-		return sendMessage({
+		return sendMessage<number>({
 			type: 'PAGE_CONTROL',
 			action: 'get_last_update_time',
 			targetTabId: this.currentTabId,
 		})
 	}
-	async getBrowserState() {
+	async getBrowserState(): Promise<BrowserState> {
 		debug('getBrowserState', this.currentTabId)
 		const currentUrl = await this.getCurrentUrl()
 		const currentTitle = await this.getCurrentTitle()
-		let browserState
+		let browserState: BrowserState
 		if (!this.currentTabId || !isContentScriptAllowed(currentUrl)) {
 			browserState = {
 				url: currentUrl,
@@ -48,7 +58,7 @@ export class RemotePageController {
 				footer: '',
 			}
 		} else {
-			const res = await sendMessage({
+			const res = await sendMessage<(BrowserState & { error?: undefined }) | { error: string; content?: undefined } | null>({
 				type: 'PAGE_CONTROL',
 				action: 'get_browser_state',
 				targetTabId: this.currentTabId,
@@ -91,24 +101,24 @@ export class RemotePageController {
 			targetTabId: this.currentTabId,
 		})
 	}
-	async clickElement(...args: any[]) {
+	async clickElement(...args: Parameters<PageController['clickElement']>) {
 		const res = await this.remoteCallDomAction('click_element', args)
 		await new Promise((resolve) => setTimeout(resolve, 1e3))
 		return res
 	}
-	async inputText(...args: any[]) {
+	async inputText(...args: Parameters<PageController['inputText']>) {
 		return this.remoteCallDomAction('input_text', args)
 	}
-	async selectOption(...args: any[]) {
+	async selectOption(...args: Parameters<PageController['selectOption']>) {
 		return this.remoteCallDomAction('select_option', args)
 	}
-	async scroll(...args: any[]) {
+	async scroll(...args: Parameters<PageController['scroll']>) {
 		return this.remoteCallDomAction('scroll', args)
 	}
-	async scrollHorizontally(...args: any[]) {
+	async scrollHorizontally(...args: Parameters<PageController['scrollHorizontally']>) {
 		return this.remoteCallDomAction('scroll_horizontally', args)
 	}
-	async executeJavascript(...args: any[]) {
+	async executeJavascript(...args: Parameters<PageController['executeJavascript']>) {
 		return this.remoteCallDomAction('execute_javascript', args)
 	}
 	/** @note Managed by content script via storage polling. */
@@ -117,7 +127,7 @@ export class RemotePageController {
 	async hideMask() {}
 	/** @note Managed by content script via storage polling. */
 	dispose() {}
-	async remoteCallDomAction(action: any, payload: any) {
+	async remoteCallDomAction(action: PageControlAction, payload: unknown[]): Promise<ActionResult> {
 		if (!this.currentTabId) {
 			return {
 				success: false,
@@ -131,7 +141,7 @@ export class RemotePageController {
 					'Operation not allowed on this page. Use open_new_tab to navigate to a web page first.',
 			}
 		}
-		return sendMessage({
+		return sendMessage<ActionResult>({
 			type: 'PAGE_CONTROL',
 			action,
 			targetTabId: this.currentTabId,
@@ -139,7 +149,7 @@ export class RemotePageController {
 		})
 	}
 }
-export function isContentScriptAllowed(url: any) {
+export function isContentScriptAllowed(url: string | undefined) {
 	if (!url) return false
 	const restrictedPatterns = [
 		/^chrome:\/\//,

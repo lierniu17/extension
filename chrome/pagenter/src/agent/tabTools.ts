@@ -1,7 +1,10 @@
-// TODO(types)
 import * as z from 'zod/v4'
 
-export function createTabTools(tabsController: any) {
+import type { PageAgentTool } from '@/core/types'
+
+import type { TabsController } from './TabsController'
+
+export function createTabTools(tabsController: TabsController): Record<string, PageAgentTool> {
 	return {
 		open_new_tab: {
 			description:
@@ -9,12 +12,12 @@ export function createTabTools(tabsController: any) {
 			inputSchema: z.object({
 				url: z.string().describe('Full URL to open in the new tab'),
 			}),
-			execute: async (input: any) => {
+			execute: async (input: { url: string }) => {
 				const { url } = input
 				try {
 					const msg = await tabsController.openNewTab(url)
 					return { success: true, message: msg }
-				} catch (error: any) {
+				} catch (error) {
 					return {
 						success: false,
 						message: `Failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -28,12 +31,12 @@ export function createTabTools(tabsController: any) {
 			inputSchema: z.object({
 				tab_id: z.number().int().describe('Tab ID to activate (from <browser_state>)'),
 			}),
-			execute: async (input: any) => {
+			execute: async (input: { tab_id: number }) => {
 				const { tab_id } = input
 				try {
 					const msg = await tabsController.switchToTab(tab_id)
 					return { success: true, message: msg }
-				} catch (error: any) {
+				} catch (error) {
 					return {
 						success: false,
 						message: `Failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -47,12 +50,12 @@ export function createTabTools(tabsController: any) {
 			inputSchema: z.object({
 				tab_id: z.number().int().describe('Tab ID to close (from <browser_state>)'),
 			}),
-			execute: async (input: any) => {
+			execute: async (input: { tab_id: number }) => {
 				const { tab_id } = input
 				try {
 					const msg = await tabsController.closeTab(tab_id)
 					return { success: true, message: msg }
-				} catch (error: any) {
+				} catch (error) {
 					return {
 						success: false,
 						message: `Failed: ${error instanceof Error ? error.message : String(error)}`,

@@ -1,7 +1,7 @@
-// TODO(types)
 import * as z from 'zod/v4'
 
 import { PageAgentCore } from '@/core/PageAgentCore'
+import type { AgentConfig } from '@/core/types'
 import { tool } from '@/core/tools'
 import { cdpEval, wrapScriptForEval } from '@/lib/cdp'
 
@@ -20,15 +20,27 @@ function detectLanguage() {
 	return lang.startsWith('zh') ? 'zh-CN' : 'en-US'
 }
 
+/** Config of the Script mode agent. */
+export type ScriptModeAgentConfig = Omit<AgentConfig, 'pageController'>
+
+/** Detail of the `tipscript_proposal` event: the save_as_tipscript tool's input. */
+export interface TipScriptProposal {
+	name: string
+	description: string
+	script: string
+	urlPatterns: string[]
+	triggerMode: 'auto' | 'manual'
+}
+
 export class ScriptModeAgent extends PageAgentCore {
 	pickedSelectors: string[] = []
-	addPickedSelector(selector: any) {
+	addPickedSelector(selector: string) {
 		this.pickedSelectors.push(selector)
 	}
 	clearPickedSelectors() {
 		this.pickedSelectors = []
 	}
-	constructor(config: any) {
+	constructor(config: ScriptModeAgentConfig) {
 		const tabsController = new TabsController()
 		const pageController = new RemotePageController(tabsController)
 		const language2 = config.language ?? detectLanguage()
@@ -38,7 +50,7 @@ export class ScriptModeAgent extends PageAgentCore {
 			config.scriptInPromptStrategy === 'digest'
 		)
 		const systemPrompt = injectBridgeApis(promptTemplate)
-		const self = { pickedSelectors: [] }
+		const self: { pickedSelectors: string[] } = { pickedSelectors: [] }
 		const originalGetBrowserState = pageController.getBrowserState.bind(pageController)
 		pageController.getBrowserState = async () => {
 			const tabId = tabsController.currentTabId
@@ -74,7 +86,7 @@ export class ScriptModeAgent extends PageAgentCore {
 						})
 					).describe('Ordered patches applied sequentially'),
 				}),
-				execute: async function (this: any, input: any) {
+				execute: async function (input) {
 					const patchResult = this.applyPatches(input.patches)
 					if (!patchResult.success) {
 						return { success: false, message: `❌ Patch failed: ${patchResult.error}` }
@@ -111,7 +123,7 @@ export class ScriptModeAgent extends PageAgentCore {
 					selector: z.string().describe('CSS selector for the target element'),
 					depth: z.number().optional().describe('Max nesting depth to return (default 3)'),
 				}),
-				execute: async function (this: any, input: any) {
+				execute: async function (input) {
 					const tabId = tabsController.currentTabId
 					if (!tabId) return { success: false, message: 'No active tab' }
 					try {
@@ -130,7 +142,7 @@ export class ScriptModeAgent extends PageAgentCore {
 						.optional()
 						.describe('CSS selector to scope the tree (omit for entire page)'),
 				}),
-				execute: async function (this: any, input: any) {
+				execute: async function (input) {
 					const tabId = tabsController.currentTabId
 					if (!tabId) return { success: false, message: 'No active tab' }
 					try {
@@ -161,7 +173,7 @@ export class ScriptModeAgent extends PageAgentCore {
 						`"manual" = user-triggered on demand (DEFAULT when unsure); the script's top-level code IS the entry — do not create a trigger button, perform the action immediately. "auto" = runs on every matching page load; only for persistent UI/style injections that should always be present.`
 					),
 				}),
-				execute: async function (this: any, input: any) {
+				execute: async function (input) {
 					if (input.script === 'USE_CURRENT_SCRIPT') {
 						if (this.currentScript) {
 							input.script = this.currentScript
@@ -181,14 +193,14 @@ export class ScriptModeAgent extends PageAgentCore {
 				},
 			}),
 		}
-		let heartBeatInterval: any = null
+		let heartBeatInterval: number | null = null
 		super({
 			...config,
 			pageController,
 			customTools,
 			customSystemPrompt: systemPrompt,
-			onBeforeTask: async (agent: any) => {
-				self.pickedSelectors = agent.pickedSelectors || []
+			onBeforeTask: async (agent) => {
+				self.pickedSelectors = (agent as ScriptModeAgent).pickedSelectors || []
 				await tabsController.init(agent.task, {
 					includeInitialTab: true,
 					experimentalIncludeAllTabs: false,

@@ -1,9 +1,41 @@
-// TODO(types)
+import type { BrowserState } from '@/page-controller/PageController'
 import { cdpSend } from '@/lib/cdp'
 
-export async function scriptModeGetBrowserState(tabId: any, pickedSelectors: any) {
+/** `Runtime.evaluate` with `returnByValue`: the script's value. */
+interface EvaluateResult<T> {
+	result?: { value?: T }
+}
+
+/** What the summary script (buildSummaryScript) returns from the page. */
+interface PageSummary {
+	url?: string
+	title?: string
+	pageType?: string
+	rootContainers?: string[]
+	landmarks?: Record<string, string>
+	stableSelectors?: { selector: string; count: number; examples?: string[] }[]
+	repeatingPatterns?: { selector: string; count: number; sampleText?: string }[]
+	colorScheme?: { bodyBg?: string; mainBg?: string; bodyColor?: string }
+	pickedElements?: { tag: string; selector: string; attrs?: Record<string, string>; text?: string }[]
+}
+
+/** The fields of an `Accessibility.AXNode` the formatter reads. */
+interface AXNode {
+	nodeId?: string
+	role?: { value?: string }
+	name?: { value?: string }
+	description?: { value?: string }
+	ignored?: boolean
+	depth?: number
+	properties?: { name: string; value?: { value?: unknown } }[]
+}
+
+export async function scriptModeGetBrowserState(
+	tabId: number,
+	pickedSelectors: string[]
+): Promise<BrowserState> {
 	await cdpSend(tabId, 'DOM.enable')
-	const result = await cdpSend(tabId, 'Runtime.evaluate', {
+	const result = await cdpSend<EvaluateResult<PageSummary>>(tabId, 'Runtime.evaluate', {
 		expression: buildSummaryScript(pickedSelectors),
 		returnByValue: true,
 		awaitPromise: true,
@@ -33,9 +65,9 @@ export async function scriptModeGetBrowserState(tabId: any, pickedSelectors: any
 	}
 }
 
-export async function inspectDom(tabId: any, selector: any, depth = 3) {
+export async function inspectDom(tabId: number, selector: string, depth = 3) {
 	await cdpSend(tabId, 'DOM.enable')
-	const result = await cdpSend(tabId, 'Runtime.evaluate', {
+	const result = await cdpSend<EvaluateResult<string>>(tabId, 'Runtime.evaluate', {
 		expression: buildInspectScript(selector, depth),
 		returnByValue: true,
 		awaitPromise: true,
@@ -43,17 +75,17 @@ export async function inspectDom(tabId: any, selector: any, depth = 3) {
 	return result?.result?.value || '(element not found)'
 }
 
-export async function getAxTree(tabId: any, selector: any) {
+export async function getAxTree(tabId: number, selector: string | undefined) {
 	await Promise.all([cdpSend(tabId, 'DOM.enable'), cdpSend(tabId, 'Accessibility.enable')])
 	let backendNodeId
 	if (selector) {
-		const doc2 = await cdpSend(tabId, 'DOM.getDocument', { depth: 0 })
-		const searchResult = await cdpSend(tabId, 'DOM.querySelector', {
+		const doc2 = await cdpSend<{ root: { nodeId: number } }>(tabId, 'DOM.getDocument', { depth: 0 })
+		const searchResult = await cdpSend<{ nodeId?: number }>(tabId, 'DOM.querySelector', {
 			nodeId: doc2.root.nodeId,
 			selector,
 		})
 		if (searchResult?.nodeId) {
-			const desc = await cdpSend(tabId, 'DOM.describeNode', {
+			const desc = await cdpSend<{ node?: { backendNodeId?: number } }>(tabId, 'DOM.describeNode', {
 				nodeId: searchResult.nodeId,
 			})
 			backendNodeId = desc?.node?.backendNodeId
@@ -61,13 +93,13 @@ export async function getAxTree(tabId: any, selector: any) {
 	}
 	const params = backendNodeId ? { backendNodeId, fetchRelatives: true } : {}
 	const axResult = backendNodeId
-		? await cdpSend(tabId, 'Accessibility.getPartialAXTree', params).catch(() => ({ nodes: [] }))
-		: await cdpSend(tabId, 'Accessibility.getFullAXTree').catch(() => ({ nodes: [] }))
+		? await cdpSend<{ nodes: AXNode[] }>(tabId, 'Accessibility.getPartialAXTree', params).catch(() => ({ nodes: [] }))
+		: await cdpSend<{ nodes: AXNode[] }>(tabId, 'Accessibility.getFullAXTree').catch(() => ({ nodes: [] }))
 	const nodes = axResult?.nodes || []
 	return formatAxNodes(nodes, 80)
 }
 
-function buildSummaryScript(pickedSelectors: any) {
+function buildSummaryScript(pickedSelectors: string[]) {
 	const pickedJson = JSON.stringify(pickedSelectors || [])
 	return `(function() {
   var result = {
@@ -207,7 +239,7 @@ function buildSummaryScript(pickedSelectors: any) {
 })()`
 }
 
-function formatSummary(raw: any) {
+function formatSummary(raw: PageSummary) {
 	const lines = []
 	lines.push('Type: ' + (raw.pageType || 'static'))
 	lines.push('')
@@ -262,7 +294,7 @@ function formatSummary(raw: any) {
 	return lines.join('\n')
 }
 
-function buildInspectScript(selector: any, maxDepth: any) {
+function buildInspectScript(selector: string, maxDepth: number) {
 	return `(function() {
   var SKIP = new Set(['SCRIPT','STYLE','NOSCRIPT','SVG','PATH','CIRCLE','RECT','LINE','POLYGON','POLYLINE','ELLIPSE','G','DEFS','CLIPPATH','MASK']);
   var MAX_TEXT = 80;
@@ -311,10 +343,10 @@ function buildInspectScript(selector: any, maxDepth: any) {
 })()`
 }
 
-function formatAxNodes(nodes: any, maxNodes: any) {
+function formatAxNodes(nodes: AXNode[], maxNodes: number) {
 	if (!nodes.length) return '(empty accessibility tree)'
 	const lines = []
-	const idMap = new Map()
+	const idMap = new Map<string, AXNode>()
 	for (const n of nodes) {
 		if (n.nodeId) idMap.set(n.nodeId, n)
 	}

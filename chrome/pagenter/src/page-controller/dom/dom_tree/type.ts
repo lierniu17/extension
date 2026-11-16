@@ -1,6 +1,12 @@
-// TODO(types)
 // FlatDomTree: 扁平化 DOM 树结构，适用于高效存储和遍历页面结构。
 // 每个节点通过 map 索引，支持文本节点和元素节点，字段区分 undefined 和 false。
+
+/** Extra data the extraction attaches to an element (scroll info for scrollable containers). */
+export interface ElementExtra {
+	scrollable?: boolean
+	scrollData?: { left?: number; top?: number; right?: number; bottom?: number }
+	[key: string]: unknown
+}
 
 export interface FlatDomTree {
 	rootId: string
@@ -28,7 +34,7 @@ export interface ElementDomNode {
 	isNew?: boolean
 	isInteractive?: false
 	hintLabel?: string
-	extra?: Record<string, any>
+	extra?: ElementExtra
 	// 其他可选字段
 	[key: string]: unknown
 }

@@ -1,8 +1,11 @@
-// TODO(types)
 /**
  * content script for RemotePageController
  */
+import type { PageControlMessage } from '@/lib/messages'
 import { PageController } from '@/page-controller/PageController'
+
+/** PageController looked up by method name (see getMethodName). */
+type PageControllerMethods = Record<string, (...args: unknown[]) => unknown>
 
 export function initPageController() {
 	let pageController: PageController | null = null
@@ -81,7 +84,7 @@ export function initPageController() {
 		}
 	}, 500)
 
-	chrome.runtime.onMessage.addListener((message, sender, sendResponse): true | undefined => {
+	chrome.runtime.onMessage.addListener((message: PageControlMessage, sender, sendResponse): true | undefined => {
 		if (message.type !== 'PAGE_CONTROL') {
 			return
 		}
@@ -90,7 +93,7 @@ export function initPageController() {
 		const methodName = getMethodName(action)
 
 		getPC()
-			.then((pc: any) => {
+			.then((pc) => {
 				switch (action) {
 					case 'get_last_update_time':
 					case 'get_browser_state':
@@ -102,13 +105,13 @@ export function initPageController() {
 					case 'scroll':
 					case 'scroll_horizontally':
 					case 'execute_javascript':
-						return pc[methodName](...(payload || []))
+						return (pc as unknown as PageControllerMethods)[methodName](...(payload || []))
 					default:
 						return { success: false, error: `Unknown PAGE_CONTROL action: ${action}` }
 				}
 			})
-			.then((result: any) => sendResponse(result))
-			.catch((error: any) =>
+			.then((result) => sendResponse(result))
+			.catch((error) =>
 				sendResponse({
 					success: false,
 					error: error instanceof Error ? error.message : String(error),
