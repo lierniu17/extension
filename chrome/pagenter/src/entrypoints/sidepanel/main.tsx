@@ -1,85 +1,29 @@
-// 批次 5 还原 sidepanel 界面；批次 1 只保留空入口
-// 批次 2：引用 core / llms，让构建把它们打进来、对比脚本能看到（批次 5 换成真实界面）
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 
-import { DEFAULT_SYSTEM_INSTRUCTION, resolveLlmConfig } from '@/agent/constants'
-import { callApiByProjectAndTool, callUpstreamMcpByName } from '@/agent/exposedApis'
-import { MultiPageAgent } from '@/agent/MultiPageAgent'
-import {
-	clearSessions,
-	deleteSession,
-	deleteTipScript,
-	getMatchingTipScripts,
-	getSession,
-	listSessions,
-	listTipScripts,
-	saveSession,
-	saveTipScript,
-	updateSession,
-	updateTipScript,
-} from '@/lib/db'
-import {
-	countSamplesByApi,
-	createProject,
-	deleteProject,
-	deleteUpstreamMcpServer,
-	getApi,
-	getLatestSpecByApi,
-	getProject,
-	listApisByProject,
-	listProjects,
-	listSamplesByApi,
-	listUpstreamMcpServers,
-	putSpec,
-	putUpstreamMcpServer,
-	updateApi,
-	updateProject,
-} from '@/lib/sniff/db'
-import { probeCapabilities } from '@/llms'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
+import { I18nProvider } from '@/i18n'
 
-const BATCH_2_MODULES = [
-	MultiPageAgent,
-	callApiByProjectAndTool,
-	callUpstreamMcpByName,
-	probeCapabilities,
-	resolveLlmConfig,
-	DEFAULT_SYSTEM_INSTRUCTION,
-	// 批次 4：数据库的会话、TipScript、Sniff 表在界面里用（批次 5 换成真实用法）
-	clearSessions,
-	deleteSession,
-	deleteTipScript,
-	getMatchingTipScripts,
-	getSession,
-	listSessions,
-	listTipScripts,
-	saveSession,
-	saveTipScript,
-	updateSession,
-	updateTipScript,
-	countSamplesByApi,
-	createProject,
-	deleteProject,
-	deleteUpstreamMcpServer,
-	getApi,
-	getLatestSpecByApi,
-	getProject,
-	listApisByProject,
-	listProjects,
-	listSamplesByApi,
-	listUpstreamMcpServers,
-	putSpec,
-	putUpstreamMcpServer,
-	updateApi,
-	updateProject,
-]
+import App from './App'
 
-function App() {
-	return <div data-modules={BATCH_2_MODULES.length}>Pagenter</div>
+import '@/assets/index.css'
+
+// Sync dark mode with system preference
+const syncDarkMode = () => {
+	document.documentElement.classList.toggle(
+		'dark',
+		matchMedia('(prefers-color-scheme: dark)').matches
+	)
 }
+syncDarkMode()
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', syncDarkMode)
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
 	<React.StrictMode>
-		<App />
+		<ErrorBoundary>
+			<I18nProvider>
+				<App />
+			</I18nProvider>
+		</ErrorBoundary>
 	</React.StrictMode>
 )
