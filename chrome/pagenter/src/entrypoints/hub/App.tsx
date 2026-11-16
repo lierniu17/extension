@@ -65,7 +65,7 @@ export default function App() {
 					<ProtocolDocsCollapsible />
 				</div>
 				<div className="border-t px-5 py-3 text-[10px] text-muted-foreground/60 flex items-center justify-between">
-					<span className="font-mono">v1.8.0</span>
+					<span className="font-mono">v{__VERSION__}</span>
 					<span>
 						{t('about.credits')}{' '}
 						<a

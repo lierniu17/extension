@@ -16,7 +16,7 @@ import {
 	User,
 	Zap,
 } from 'lucide-react'
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 
 import type { AgentActivity, HistoricalEvent } from '@/core/types'
 import { useI18n } from '@/i18n'
@@ -60,7 +60,7 @@ function ResultCard({ success, text, finalScript, children }: any) {
 function ReflectionItem({ icon, value }: any) {
 	const [expanded, setExpanded] = useState(false)
 	return (
-		<>
+		<Fragment>
 			<span className="text-xs flex justify-center">{icon}</span>
 			<span
 				className={cn(
@@ -71,7 +71,7 @@ function ReflectionItem({ icon, value }: any) {
 			>
 				{value}
 			</span>
-		</>
+		</Fragment>
 	)
 }
 
