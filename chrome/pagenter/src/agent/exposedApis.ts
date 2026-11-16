@@ -6,7 +6,7 @@ import {
 	listApisByProject,
 	listProjects,
 	listUpstreamMcpServers,
-} from '@/lib/sniffDb'
+} from '@/lib/sniff/db'
 
 export function extractOrigin(url: any) {
 	if (!url) return null
@@ -47,6 +47,48 @@ export async function listEnabledMcpServers() {
 	return servers
 		.filter((s) => s.enabled && (s.allowedTools === '*' || s.allowedTools.length > 0))
 		.map((s) => ({ name: s.name, tools: s.allowedTools }))
+}
+/** Page bridge `listApis`: the exposed APIs of the project matching the tab's origin. */
+export async function handleApiList(sender: chrome.runtime.MessageSender, payload: any) {
+	const origin = extractOrigin(sender.tab?.url)
+	if (!origin) return { error: 'No tab origin available' }
+	const project = payload.projectId
+		? await listProjects().then((ps) => ps.find((p) => p.id === payload.projectId) ?? null)
+		: await findProjectByOrigin(origin)
+	if (!project) return { error: 'No matching project for this origin' }
+	if (!originMatches(origin, project.originPatterns)) {
+		return { error: `Origin ${origin} is not allowed for project ${project.id}` }
+	}
+	const apis = await listApisByProject(project.id)
+	const exposed = apis.filter((a) => a.exposed)
+	const out = []
+	for (const a of exposed) {
+		const spec = a.currentSpecId ? await getLatestSpecByApi(a.id) : null
+		out.push({
+			projectId: project.id,
+			apiId: a.id,
+			toolName: a.toolName ?? a.id,
+			displayName: a.displayName,
+			description: a.description,
+			method: a.method,
+			urlPattern: a.urlPattern,
+			inputSchema: spec?.inputSchema ?? null,
+			outputSchema: spec?.outputSchema ?? null,
+		})
+	}
+	return { data: out }
+}
+/**
+ * Page bridge `callApi`: calls an exposed API of the project matching the tab's origin,
+ * with the user's cookies (`credentials: 'include'`).
+ * Security note (spec 补充说明): restored as-is, the only check is the origin lookup.
+ */
+export async function handleApiCall(sender: chrome.runtime.MessageSender, payload: any) {
+	const origin = extractOrigin(sender.tab?.url)
+	if (!origin) return { error: 'No tab origin available' }
+	const project = await findProjectByOrigin(origin)
+	if (!project) return { error: 'No matching project for this origin' }
+	return callApiByProjectAndTool(project.id, payload.toolName, payload.args ?? {})
 }
 export async function callApiByProjectAndTool(projectId: any, toolName: any, args: any) {
 	const project = await listProjects().then((ps) => ps.find((p) => p.id === projectId) ?? null)
@@ -142,6 +184,10 @@ export async function callUpstreamMcpByName(serverName: any, toolName: any, args
 	} catch (err: any) {
 		return { error: err instanceof Error ? err.message : String(err) }
 	}
+}
+/** Page bridge `mcp`: forwards to a configured upstream MCP server. */
+export async function handleMcpCall(_sender: chrome.runtime.MessageSender, payload: any) {
+	return callUpstreamMcpByName(payload.serverName, payload.toolName, payload.args ?? {})
 }
 function matchAllowedTools(server: any, tool: any) {
 	const list = server.allowedTools ?? []
