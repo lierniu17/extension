@@ -1,26 +1,47 @@
-// TODO(types)
+import type { TabControlMessage, TabControlResponse, TabEventMessage } from '@/lib/messages'
+
 import { isContentScriptAllowed } from './RemotePageController'
+
+/** A tab the agent may act on. */
+export interface TabMeta {
+	id: number
+	/** The tab the task started in; it cannot be closed by the agent. */
+	isInitial: boolean
+	url?: string
+	title?: string
+	status?: string
+}
+
+/**
+ * The service worker's answer. On a messaging failure sendMessage logs and
+ * resolves `null` instead; it is typed without `null` because the callers (as
+ * in the bundle) read the answer without a null check.
+ */
+type TabControlAnswer = Promise<TabControlResponse>
 
 const PREFIX = '[TabsController]'
 const debug = console.debug.bind(console, `\x1B[90m${PREFIX}\x1B[0m`)
-function sendMessage(message: any) {
+function sendMessage(message: TabControlMessage): TabControlAnswer {
 	return chrome.runtime.sendMessage(message).catch((error) => {
 		console.error(PREFIX, message.action, error)
 		return null
 	})
 }
 export class TabsController {
-	currentTabId: any = null
+	currentTabId: number | null = null
 	disposed = false
-	port: any = null
+	port: chrome.runtime.Port | null = null
 	portRetries = 0
-	windowId: any = null
-	tabs: any = []
-	initialTabId: any = null
-	tabGroupId: any = null
+	windowId: number | null | undefined = null
+	tabs: TabMeta[] = []
+	initialTabId: number | null | undefined = null
+	tabGroupId: number | null | undefined = null
 	experimentalIncludeAllTabs = false
 	task = ''
-	async init(task: any, options: any = {}) {
+	async init(
+		task: string,
+		options: { includeInitialTab?: boolean; experimentalIncludeAllTabs?: boolean } = {}
+	) {
 		const { includeInitialTab = true, experimentalIncludeAllTabs = false } = options
 		debug('init', task, options)
 		if (this.disposed) {
@@ -56,7 +77,7 @@ export class TabsController {
 				action: 'get_window_tabs',
 				payload: { windowId: this.windowId },
 			})
-			for (const tab of allTabs.tabs) {
+			for (const tab of allTabs.tabs!) {
 				if (tab.id && !tab.pinned && isContentScriptAllowed(tab.url)) {
 					this.addTab({
 						id: tab.id,
@@ -67,7 +88,7 @@ export class TabsController {
 					})
 				}
 			}
-			if (this.tabs.find((t: any) => t.id === this.initialTabId)) {
+			if (this.tabs.find((t) => t.id === this.initialTabId)) {
 				this.currentTabId = this.initialTabId
 				await this.createTabGroup([this.initialTabId])
 			}
@@ -91,7 +112,7 @@ export class TabsController {
 		}
 		await this.updateCurrentTabId(this.currentTabId)
 	}
-	async openNewTab(url: any) {
+	async openNewTab(url: string) {
 		debug('openNewTab', url)
 		const result = await sendMessage({
 			type: 'TAB_CONTROL',
@@ -101,7 +122,7 @@ export class TabsController {
 		if (!result.success) {
 			throw new Error(`Failed to open new tab: ${result.error}`)
 		}
-		const tabId = result.tabId
+		const tabId = result.tabId!
 		this.addTab({
 			id: tabId,
 			isInitial: false,
@@ -113,24 +134,24 @@ export class TabsController {
 			await sendMessage({
 				type: 'TAB_CONTROL',
 				action: 'add_tab_to_group',
-				payload: { tabId: result.tabId, groupId: this.tabGroupId },
+				payload: { tabId: result.tabId!, groupId: this.tabGroupId },
 			})
 		}
 		await this.waitUntilTabLoaded(tabId)
 		return `✅ Opened new tab ID ${tabId} with URL ${url}`
 	}
-	async switchToTab(tabId: any) {
+	async switchToTab(tabId: number) {
 		debug('switchToTab', tabId)
-		const targetTab = this.tabs.find((t: any) => t.id === tabId)
+		const targetTab = this.tabs.find((t) => t.id === tabId)
 		if (!targetTab) {
 			throw new Error(`Tab ID ${tabId} not found in tab list.`)
 		}
 		await this.updateCurrentTabId(tabId)
 		return `✅ Switched to tab ID ${tabId}.`
 	}
-	async closeTab(tabId: any) {
+	async closeTab(tabId: number) {
 		debug('closeTab', tabId)
-		const targetTab: any = this.tabs.find((t: any) => t.id === tabId)
+		const targetTab = this.tabs.find((t) => t.id === tabId)
 		if (!targetTab) {
 			throw new Error(`Tab ID ${tabId} not found in tab list.`)
 		}
@@ -143,9 +164,9 @@ export class TabsController {
 			payload: { tabId },
 		})
 		if (result.success) {
-			this.tabs = this.tabs.filter((t: any) => t.id !== tabId)
+			this.tabs = this.tabs.filter((t) => t.id !== tabId)
 			if (this.currentTabId === tabId) {
-				const newCurrentTab: any = this.tabs[this.tabs.length - 1] || null
+				const newCurrentTab = this.tabs[this.tabs.length - 1] || null
 				if (newCurrentTab) {
 					await this.switchToTab(newCurrentTab.id)
 				} else {
@@ -157,11 +178,11 @@ export class TabsController {
 			throw new Error(`Failed to close tab ID ${tabId}: ${result.error}`)
 		}
 	}
-	async createTabGroup(tabIds: any) {
+	async createTabGroup(tabIds: [number, ...number[]]) {
 		const result = await sendMessage({
 			type: 'TAB_CONTROL',
 			action: 'create_tab_group',
-			payload: { tabIds, windowId: this.windowId },
+			payload: { tabIds, windowId: this.windowId! },
 		})
 		if (!result?.success) {
 			throw new Error(`Failed to create tab group: ${result?.error}`)
@@ -171,7 +192,7 @@ export class TabsController {
 			type: 'TAB_CONTROL',
 			action: 'update_tab_group',
 			payload: {
-				groupId: this.tabGroupId,
+				groupId: this.tabGroupId!,
 				properties: {
 					title: `Pagenter(${this.task})`,
 					color: randomColor(),
@@ -180,17 +201,17 @@ export class TabsController {
 			},
 		})
 	}
-	addTab(meta: any) {
-		if (this.tabs.find((t: any) => t.id === meta.id)) return
+	addTab(meta: TabMeta) {
+		if (this.tabs.find((t) => t.id === meta.id)) return
 		this.tabs.push(meta)
 	}
-	async updateCurrentTabId(tabId: any) {
+	async updateCurrentTabId(tabId: number | null) {
 		debug('updateCurrentTabId', tabId)
 		this.currentTabId = tabId
 		await chrome.storage.local.set({ currentTabId: tabId })
 	}
-	async getTabInfo(tabId: any) {
-		const tabMeta: any = this.tabs.find((t: any) => t.id === tabId)
+	async getTabInfo(tabId: number): Promise<{ title?: string; url?: string }> {
+		const tabMeta = this.tabs.find((t) => t.id === tabId)
 		if (tabMeta && tabMeta.url && tabMeta.title) {
 			return { title: tabMeta.title, url: tabMeta.url }
 		}
@@ -224,20 +245,20 @@ export class TabsController {
 		const result = await sendMessage({
 			type: 'TAB_CONTROL',
 			action: 'capture_visible_tab',
-			payload: { windowId: this.windowId },
+			payload: { windowId: this.windowId! },
 		})
 		if (!result?.success) {
 			throw new Error(`Failed to capture screenshot: ${result?.error}`)
 		}
-		return result.dataUrl
+		return result.dataUrl!
 	}
-	async waitUntilTabLoaded(tabId: any) {
-		const tab: any = this.tabs.find((t: any) => t.id === tabId)
+	async waitUntilTabLoaded(tabId: number) {
+		const tab = this.tabs.find((t) => t.id === tabId)
 		if (!tab) throw new Error(`Tab ID ${tabId} not found in tab list.`)
 		if (tab.status === 'unloaded') throw new Error(`Tab ID ${tabId} is unloaded.`)
 		if (tab.status === 'complete') return
 		debug('waitUntilTabLoaded', tabId)
-		await waitUntil(() => tab.status === 'complete', 4e3)
+		await waitUntil(() => tab!.status === 'complete', 4e3)
 	}
 	/**
 	 * Connect to background SW via port to receive tab change events.
@@ -249,7 +270,7 @@ export class TabsController {
 	 */
 	connectTabEvents() {
 		this.port = chrome.runtime.connect({ name: 'tab-events' })
-		this.port.onMessage.addListener((message: any) => {
+		this.port.onMessage.addListener((message: TabEventMessage) => {
 			if (this.disposed) return
 			this.portRetries = 0
 			if (message.action === 'created') {
@@ -261,11 +282,11 @@ export class TabsController {
 				}
 			} else if (message.action === 'removed') {
 				const { tabId } = message.payload
-				const targetTab = this.tabs.find((t: any) => t.id === tabId)
+				const targetTab = this.tabs.find((t) => t.id === tabId)
 				if (targetTab) {
-					this.tabs = this.tabs.filter((t: any) => t.id !== tabId)
+					this.tabs = this.tabs.filter((t) => t.id !== tabId)
 					if (this.currentTabId === tabId) {
-						const newCurrentTab: any = this.tabs[this.tabs.length - 1] || null
+						const newCurrentTab = this.tabs[this.tabs.length - 1] || null
 						if (newCurrentTab) {
 							this.switchToTab(newCurrentTab.id)
 						} else {
@@ -275,7 +296,7 @@ export class TabsController {
 				}
 			} else if (message.action === 'updated') {
 				const { tabId, tab } = message.payload
-				const targetTab: any = this.tabs.find((t: any) => t.id === tabId)
+				const targetTab = this.tabs.find((t) => t.id === tabId)
 				if (targetTab) {
 					targetTab.url = tab.url
 					targetTab.title = tab.title
@@ -302,13 +323,17 @@ export class TabsController {
 		this.port = null
 	}
 }
-const TAB_GROUP_COLORS = ['blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan']
+const TAB_GROUP_COLORS: `${chrome.tabGroups.Color}`[] = ['blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan']
 function randomColor() {
 	return TAB_GROUP_COLORS[Math.floor(Math.random() * TAB_GROUP_COLORS.length)]
 }
-export async function waitUntil(check: any, timeoutMS = 6e4, error?: any) {
+export async function waitUntil(
+	check: () => boolean | Promise<boolean>,
+	timeoutMS = 6e4,
+	error?: unknown
+): Promise<boolean> {
 	if (await check()) return true
-	return new Promise((resolve, reject) => {
+	return new Promise<boolean>((resolve, reject) => {
 		const start = Date.now()
 		const poll = async () => {
 			if (await check()) return resolve(true)

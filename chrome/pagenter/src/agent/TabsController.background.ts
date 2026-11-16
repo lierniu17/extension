@@ -1,4 +1,5 @@
-// TODO(types)
+import type { TabControlMessage, TabEventMessage } from '@/lib/messages'
+
 /**
  * background logics for TabsController
  * - Pagenter: adds capture_visible_tab (screenshots for the vision tools)
@@ -9,7 +10,7 @@ const PREFIX = '[TabsController.background]'
 const debug = console.debug.bind(console, `\x1b[90m${PREFIX}\x1b[0m`)
 
 export function handleTabControlMessage(
-	message: { type: 'TAB_CONTROL'; action: string; payload: any },
+	message: TabControlMessage,
 	sender: chrome.runtime.MessageSender,
 	sendResponse: (response: unknown) => void
 ): true | undefined {
@@ -128,7 +129,7 @@ export function handleTabControlMessage(
 		case 'capture_visible_tab': {
 			debug('capture_visible_tab', payload)
 			chrome.tabs
-				.captureVisibleTab(payload?.windowId ?? undefined, {
+				.captureVisibleTab((payload?.windowId ?? undefined) as number, {
 					format: 'jpeg',
 					quality: 70,
 				})
@@ -152,7 +153,7 @@ export function handleTabControlMessage(
 
 const tabEventPorts = new Set<chrome.runtime.Port>()
 
-function broadcastTabEvent(message: object) {
+function broadcastTabEvent(message: TabEventMessage) {
 	for (const port of tabEventPorts) {
 		port.postMessage(message)
 	}
