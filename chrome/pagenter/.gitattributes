@@ -5,3 +5,6 @@
 *.webp binary
 # Copied byte-for-byte from the bundle, whose locale files use CRLF
 public/_locales/** -text
+# Prompts are inlined byte-for-byte by ?raw; the bundle has them with CRLF
+src/core/prompts/*.md -text
+src/agent/*.md -text

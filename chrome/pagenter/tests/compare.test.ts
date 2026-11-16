@@ -152,6 +152,66 @@ describe('compareSources classification', () => {
 		expect(names(r).same).toEqual(['f'])
 	})
 
+	it('treats a property written out only because rollup renamed its value (content: content2) as shorthand', async () => {
+		// rollup renames a local that collides with a top-level name elsewhere in
+		// the chunk; a shorthand property `{ content }` then prints as `{ content: content2 }`
+		const r = await compareSources(
+			{
+				'a.js':
+					'function f(content2, replace2) { const { search, replace: replace3 } = content2; return { type: "o", content: content2, replace: replace2 } }',
+			},
+			{
+				'a.js':
+					'function f(content, replace) { const { search, replace: replace3 } = content; return { type: "o", content, replace } }',
+			}
+		)
+		expect(names(r).same).toEqual(['f'])
+	})
+
+	it('still tells a property apart from shorthand when key and value differ', async () => {
+		const r = await compareSources(
+			{ 'a.js': 'function f(content, text) { return { content: text } }' },
+			{ 'a.js': 'function f(content, text) { return { content } }' }
+		)
+		expect(names(r).different).toEqual(['f'])
+	})
+
+	it('does not read a property whose value is a member of the same name (content: content.x) as shorthand', async () => {
+		const r = await compareSources(
+			{ 'a.js': 'function f(content) { return { content: content.x } }' },
+			{ 'a.js': 'function f(content) { return { content } }' }
+		)
+		expect(names(r).different).toEqual(['f'])
+	})
+
+	it('does not read a ternary or a call that starts with the key (a: a ? 1 : 2, a: a()) as shorthand', async () => {
+		const r = await compareSources(
+			{ 'a.js': 'function f(a) { return { a: a ? 1 : 2 } }\nfunction g(a) { return { a: a() } }' },
+			{ 'a.js': 'function f(a) { return { a } }\nfunction g(a) { return { a } }' }
+		)
+		expect(names(r).different).toEqual(['f', 'g'])
+	})
+
+	it('treats a class rollup printed as `let X$1 = class X` like the declaration `class X`', async () => {
+		// which of two same-named classes rollup renames depends on the rest of the chunk
+		const r = await compareSources(
+			{ 'a.js': 'let Range$1 = class Range { constructor(from) { this.from = from } };' },
+			{ 'a.js': 'class Range { constructor(from) { this.from = from } }' }
+		)
+		expect(names(r).same).toEqual(['Range'])
+	})
+
+	it('still tells the class form apart when the class body or the class name differs', async () => {
+		const r = await compareSources(
+			{
+				'a.js':
+					'let Range$1 = class Range { constructor(from) { this.from = from } };\nlet Other = class Inner {};',
+			},
+			{ 'a.js': 'class Range { constructor(to) { this.to = to } }\nclass Other {}' }
+		)
+		expect(names(r).different).toEqual(['Other', 'Range'])
+	})
+
 	it('compares comments inside a declaration body', async () => {
 		const r = await compareSources(
 			{ 'a.js': 'function f() {\n  // 单个 body 超过 256KB 就截断\n  return 1\n}' },

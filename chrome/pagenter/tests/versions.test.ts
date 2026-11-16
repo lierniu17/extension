@@ -65,6 +65,23 @@ describe('the restored project', () => {
 		expect(outside.map((t) => t.name)).toEqual([])
 	})
 
+	it('keeps one copy of every fingerprinted package: pnpm.overrides pins it to the table version', () => {
+		const fingerprinted = THIRD_PARTY.filter((t) => t.source === 'fingerprint')
+		expect(fingerprinted.length).toBeGreaterThan(0)
+		const overrides = pkg.pnpm.overrides as Record<string, string>
+		expect(fingerprinted.filter((t) => overrides[t.name] !== t.version).map((t) => t.name)).toEqual([])
+		const lock = readFileSync(`${PROJECT_DIR}/pnpm-lock.yaml`, 'utf8')
+		// package entries of the lockfile: `  '@codemirror/view@6.41.0':` / `  crelt@1.0.6:`
+		const copies = (name: string) =>
+			new Set(
+				lock
+					.split('\n')
+					.filter((l) => l.startsWith(`  ${name}@`) || l.startsWith(`  '${name}@`))
+					.map((l) => l.trim().replace(/^'/, '').slice(name.length + 1).replace(/[(':].*$/, ''))
+			)
+		expect(fingerprinted.filter((t) => copies(t.name).size !== 1).map((t) => t.name)).toEqual([])
+	})
+
 	it('matches every version the bundle reveals, at least React 19.2.4 (AC-3, AC-14)', () => {
 		const detected = detectBundleVersions(THIRD_PARTY, readJsFiles(BUNDLE_DIR))
 		expect(detected.react).toBe('19.2.4')

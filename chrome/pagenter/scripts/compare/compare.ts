@@ -8,7 +8,14 @@
 //   paired by logical file (path without chunk hash); whatever is left is 仅一方有;
 // - "<statement>" entries (top-level code that declares nothing) only pair by body;
 // - third-party code and build helpers are excluded and listed separately.
-import { analyzeFiles, STATEMENT, snippetKey, type Declaration, type SourceFiles } from './declarations.ts'
+import {
+	analyzeFiles,
+	isNamespaceObjectCode,
+	STATEMENT,
+	snippetKey,
+	type Declaration,
+	type SourceFiles,
+} from './declarations.ts'
 
 export type Side = 'original' | 'restored'
 
@@ -72,13 +79,8 @@ export const DEFAULT_HELPER_NAMES = [
 	'commonjsGlobal',
 ]
 
-// Rollup's namespace object for a dynamically imported module, compared with
-// whitespace removed: const X = Object.freeze(Object.defineProperty({ __proto__: null, ... }, Symbol.toStringTag, { value: "Module" }))
-const NAMESPACE_OBJECT =
-	/^const[\w$]+=(\/\*@__PURE__\*\/)?Object\.freeze\((\/\*@__PURE__\*\/)?Object\.defineProperty\(\{__proto__:null,.*Symbol\.toStringTag,\{value:"Module"\},?\),?\);?$/s
-
 function isNamespaceObject(d: Declaration): boolean {
-	return NAMESPACE_OBJECT.test(d.text.replace(/\s+/g, ''))
+	return isNamespaceObjectCode(d.text)
 }
 
 async function statementOrigins(map: StatementOriginMap | undefined): Promise<Map<string, string>> {

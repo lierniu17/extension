@@ -64,6 +64,15 @@ export function normalizeName(name: string): string {
 	return name.replace(/^(.+?)\$[0-9A-Za-z_]+$/, '$1').replace(/^(.*[^\d$])\d+$/, '$1')
 }
 
+// Rollup's namespace object for a dynamically imported module, compared with
+// whitespace removed: const X = Object.freeze(Object.defineProperty({ __proto__: null, ... }, Symbol.toStringTag, { value: "Module" }))
+const NAMESPACE_OBJECT =
+	/^const[\w$]+=(\/\*@__PURE__\*\/)?Object\.freeze\((\/\*@__PURE__\*\/)?Object\.defineProperty\(\{__proto__:null,.*Symbol\.toStringTag,\{value:"Module"\},?\),?\);?$/s
+
+export function isNamespaceObjectCode(code: string): boolean {
+	return NAMESPACE_OBJECT.test(code.replace(/\s+/g, ''))
+}
+
 export async function formatSource(code: string): Promise<string> {
 	return prettier.format(code, { parser: 'babel', printWidth: 100 })
 }
@@ -243,6 +252,9 @@ function tokenize(code: string): Token[] {
  * Tokens from index `from` up to source position `end`, joined into a key.
  * Trailing commas (`,` right before `)`/`]`/`}`) are dropped: prettier adds
  * them only when a line is broken, which depends on identifier lengths.
+ * A property whose key equals its (normalized) value, `{ content: content2 }`,
+ * is collapsed to shorthand `{ content }`: rollup writes the long form only
+ * because it renamed the value to dodge a name elsewhere in the chunk.
  */
 function keyOf(
 	tokens: Token[],
@@ -251,13 +263,33 @@ function keyOf(
 	rename: (n: string) => string
 ): string {
 	const parts: string[] = []
+	const isId: boolean[] = []
 	for (let i = from; i < tokens.length; i++) {
 		const t = tokens[i]
 		if (t.start >= end) break
-		if (t.text === ')' || t.text === ']' || t.text === '}') {
-			if (parts[parts.length - 1] === ',') parts.pop()
+		if (t.text === ',' || t.text === '}' || t.text === '=') {
+			const n = parts.length
+			if (
+				n >= 4 &&
+				parts[n - 2] === ':' &&
+				isId[n - 1] &&
+				isId[n - 3] &&
+				parts[n - 1] === parts[n - 3] &&
+				(parts[n - 4] === '{' || parts[n - 4] === ',')
+			) {
+				parts.length = n - 2
+				isId.length = n - 2
+			}
 		}
-		parts.push(t.identifier && !t.afterDot ? rename(t.text) : t.text)
+		if (t.text === ')' || t.text === ']' || t.text === '}') {
+			if (parts[parts.length - 1] === ',') {
+				parts.pop()
+				isId.pop()
+			}
+		}
+		const id = t.identifier && !t.afterDot
+		parts.push(id ? rename(t.text) : t.text)
+		isId.push(id)
 	}
 	return parts.join(' ')
 }
@@ -303,7 +335,7 @@ export async function analyzeFiles(
 		const fileOrigins = origins[f.path] ?? {}
 		for (const u of f.units) {
 			const from = firstTokenAt(tokens, u.node.start)
-			const key = keyOf(tokens, from, u.node.end, rename)
+			const key = asClassDeclaration(keyOf(tokens, from, u.node.end, rename))
 			decls.push({
 				file: f.file,
 				path: f.path,
@@ -316,6 +348,18 @@ export async function analyzeFiles(
 		}
 	}
 	return decls
+}
+
+/**
+ * `let X$1 = class X { ... };` is how rollup prints a class it had to rename
+ * (the expression keeps `X.name`); it is the same source as `class X { ... }`.
+ * Which of two same-named classes gets renamed depends on what else is in the
+ * chunk, so the key uses the declaration form. Only applies when the binding
+ * and the class name are the same identifier after rename normalization.
+ */
+export function asClassDeclaration(key: string): string {
+	const m = /^(?:let|const|var) ([\w$]+) = class ([\w$]+) (.*) ;$/s.exec(key)
+	return m && m[1] === m[2] ? `class ${m[2]} ${m[3]}` : key
 }
 
 /** Comparison key of a free-standing snippet (used for vendor statements). */
