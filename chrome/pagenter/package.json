@@ -1,0 +1,74 @@
+{
+	"name": "pagenter",
+	"private": true,
+	"version": "1.8.0",
+	"type": "module",
+	"description": "Pagenter restored source: AI-powered browser automation extension",
+	"license": "MIT",
+	"scripts": {
+		"dev": "wxt",
+		"build": "wxt build",
+		"zip": "wxt zip",
+		"postinstall": "wxt prepare",
+		"typecheck": "wxt prepare && tsc --noEmit",
+		"test": "vitest run",
+		"check:any": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/check-todo-types.ts",
+		"compare": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/compare/cli.ts",
+		"unchanged-files": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/unchanged-files.ts",
+		"verify": "pnpm build && pnpm typecheck && pnpm check:any && pnpm test && pnpm compare"
+	},
+	"dependencies": {
+		"ai-motion": "0.4.8",
+		"chalk": "5.6.2",
+		"zod": "4.3.6"
+	},
+	"devDependencies": {
+		"@radix-ui/react-hover-card": "1.1.15",
+		"@radix-ui/react-icons": "1.3.2",
+		"@radix-ui/react-label": "2.1.8",
+		"@radix-ui/react-separator": "1.1.8",
+		"@radix-ui/react-slot": "1.2.4",
+		"@radix-ui/react-switch": "1.2.6",
+		"@tailwindcss/vite": "4.2.2",
+		"@types/chrome": "0.1.38",
+		"@types/node": "25.5.0",
+		"@types/react": "19.2.14",
+		"@types/react-dom": "19.2.3",
+		"@wxt-dev/module-react": "1.2.2",
+		"acorn": "8.15.0",
+		"class-variance-authority": "0.7.1",
+		"clsx": "2.1.1",
+		"idb": "8.0.3",
+		"lucide-react": "1.7.0",
+		"motion": "12.38.0",
+		"next-themes": "0.4.6",
+		"prettier": "3.8.1",
+		"react": "19.2.4",
+		"react-dom": "19.2.4",
+		"rough-notation": "0.5.1",
+		"simple-icons": "16.14.0",
+		"sonner": "2.0.7",
+		"tailwind-merge": "3.5.0",
+		"tailwindcss": "4.2.2",
+		"tw-animate-css": "1.4.0",
+		"typescript": "5.9.3",
+		"vite": "7.3.1",
+		"vitest": "5.1.0",
+		"wxt": "0.20.20",
+		"yaml": "2.9.1"
+	},
+	"pnpm": {
+		"overrides": {
+			"vite": "7.3.1",
+			"rollup": "4.57.1",
+			"esbuild": "0.27.2",
+			"@vitejs/plugin-react": "5.1.3",
+			"@babel/core": "7.29.0"
+		},
+		"onlyBuiltDependencies": [
+			"esbuild",
+			"@tailwindcss/oxide",
+			"spawn-sync"
+		]
+	}
+}

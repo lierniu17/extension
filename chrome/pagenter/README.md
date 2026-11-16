@@ -1,0 +1,68 @@
+# chrome/pagenter
+
+Pagenter 1.8.0 的还原源码（Restored Source）：单个 WXT 工程（ADR-0002），以产物
+`../pagenter-ext-1.8.0-chrome` 为唯一事实来源（ADR-0001）。还原计划与验收标准见
+`../../docs/specs/2026-11-16-pagenter-reverse.md`。
+
+## 命令
+
+需要 Node ≥ 22.12（vitest 5 的要求，脚本用 `--experimental-strip-types` 直接跑 `.ts`）、pnpm 10。
+
+```bash
+pnpm install --frozen-lockfile   # 按 lockfile 安装
+pnpm build                       # 构建到 .output/chrome-mv3（关闭压缩）
+pnpm typecheck                   # wxt prepare + tsc --noEmit（strict）
+pnpm check:any                   # 含显式 any 的文件必须在文件头标 // TODO(types)
+pnpm test                        # vitest；tests/build/ 下的用例读 pnpm build 的产物
+pnpm compare                     # 对比脚本，见下
+pnpm verify                      # build + typecheck + check:any + test + compare
+```
+
+在 Chrome 加载：`chrome://extensions` → 开发者模式 → 加载已解压的扩展程序 → 选 `.output/chrome-mv3`。
+
+## 目录
+
+| 路径 | 内容 |
+| --- | --- |
+| `src/entrypoints/` | background、content、pagenter-bridge（主世界）、sidepanel、options、popup、hub、offscreen |
+| `src/core`、`src/llms`、`src/page-controller` | 上游三个包，作为子目录（批次 2、3 还原） |
+| `public/` | `_locales` 与图标，从产物原样复制 |
+| `scripts/compare/` | 对比脚本 |
+| `scripts/unchanged-files.ts` | 生成「未改动文件表」 |
+| `docs/unchanged-files.json` | 「未改动文件表」（AC-7 的输入） |
+| `tests/` | vitest；`tests/fixtures/bundle-snapshot.json` 是还原开始前产物的文件哈希（AC-2） |
+
+## 对比脚本
+
+```bash
+pnpm build
+pnpm compare                    # 默认：原产物 ../pagenter-ext-1.8.0-chrome，新产物 .output/chrome-mv3
+pnpm compare --strict           # 「不同」「仅一方有」、版本、manifest、文件清单任一不为空即退出码 1（AC-13 / BOT-6）
+pnpm compare --original <dir> --restored <dir> --out <dir> [--no-probe]
+```
+
+输出 `.output/compare/report.md`（给人看）与 `report.json`（含每条声明的两侧源码）。
+
+口径：
+
+- 两边 `.js` 都先用 prettier 格式化，再用 acorn 取顶层声明（函数、类、变量；不声明任何名字的顶层语句记作 `<statement>`）。WXT 给 background / content / bridge 包的 IIFE 会先拆开。
+- import / export 语句去掉；`import { e as getSession$1 }` 这类 Vite 短名别名映射回真名。
+- 比较的是去掉空白后的 token 序列（注释也算），并做三种归一：rollup 重名后缀（`$1`、`$d`、嵌套作用域里的 `current2`）去掉；prettier 因行宽才加的尾逗号去掉。代价：只差一个尾部数字的标识符（`x1` / `x2`）会被视为相同。
+- 对应关系：按声明名配对，文件名与 chunk 拆分不影响；同名声明有多份时先按声明体配，再按「逻辑文件」（去掉 chunk hash 的路径，如 `chunks/db`）配；对不上的进「仅一方有」，由人判断是口径问题还是还原遗漏。
+- 排除项（不进三类清单，单独列在报告里）：
+  - 新产物的第三方代码：构建时 `scripts/compare/decl-origin-plugin.ts` 记下每个声明来自哪个包（写到 `.output/compare/decl-origin/`，不进扩展目录）。
+  - 原产物的第三方代码：原产物没有模块边界，靠「声明体与已知第三方声明相同」识别。已知第三方声明来自新产物和 vendor probe —— `third-party.ts` 里列了 `probe` 的包会被单独打成一个小 bundle（`.output/compare/probe/`）。新加依赖时把它加进 `third-party.ts`。
+  - 构建辅助代码：`__vitePreload` 等 Vite/rollup 胶水代码与 rollup 的模块命名空间对象。
+- 版本核对：`third-party.ts` 是版本对照表（来源：产物 / 上游 v1.7.1 / 工具链），报告里逐个列出期望版本、lockfile 版本和产物里读到的版本。
+
+## 未改动文件表
+
+```bash
+pnpm unchanged-files --upstream <alibaba/page-agent 的本地 clone>   # 只用 git show 读 v1.7.1
+```
+
+对上游 v1.7.1 `packages/{core,llms,page-controller,extension}` 的每个文件：代码文件用 esbuild 转译（同 Vite），把 CommonJS 互操作写法换成产物的写法（`useState` → `reactExports.useState`），再用对比脚本的口径逐声明与产物比；`public/` 资源比哈希；CSS、SVG 标 `manual`。`unchanged` 列表就是 AC-7 要逐个比较的文件；其余状态（`changed` / `absent` / `no-runtime-code` / `manual` / `not-in-bundle`）留作参考。
+
+## 许可
+
+上游 alibaba/page-agent 的 MIT 许可，见 `LICENSE`。

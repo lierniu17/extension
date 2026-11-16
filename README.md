@@ -5,6 +5,7 @@
 | 目录 | 扩展 | 说明 |
 |---|---|---|
 | [`chrome/pagenter-ext-1.8.0-chrome`](chrome/pagenter-ext-1.8.0-chrome) | Pagenter 1.8.0 | AI 驱动的浏览器自动化助手，用自然语言控制网页 |
+| [`chrome/pagenter`](chrome/pagenter) | Pagenter 1.8.0 还原源码 | 从上面的产物还原出的 WXT 工程，见 [chrome/pagenter/README.md](chrome/pagenter/README.md) |
 | [`vscode/drag-import`](vscode/drag-import) | Drag Import 1.0.0 | 在 VS Code / Cursor 中拖入文件，自动生成 `import` 语句 |
 
 ## Pagenter
@@ -30,7 +31,7 @@ Chrome Manifest V3 扩展，当前目录是已打包的 1.8.0 版本（含弹窗
 
 ```bash
 cd vscode/drag-import
-nvm use          # 仓库根目录 .nvmrc 为 Node.js 20
+nvm use          # 仓库根目录 .nvmrc 为 Node.js 22
 npm install
 npm run compile  # 或 npm run watch
 ```
@@ -43,4 +44,4 @@ npm run package  # 生成 .vsix
 
 ## 许可
 
-Drag Import 使用 [MIT](vscode/drag-import/LICENSE)。
+Drag Import 使用 [MIT](vscode/drag-import/LICENSE)。Pagenter 还原源码保留上游 alibaba/page-agent 的 [MIT LICENSE](chrome/pagenter/LICENSE)。

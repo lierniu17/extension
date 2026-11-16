@@ -1,0 +1,14 @@
+{
+	"extends": "./.wxt/tsconfig.json",
+	"compilerOptions": {
+		"strict": true,
+		"useDefineForClassFields": true,
+		"noEmit": true,
+		"allowImportingTsExtensions": true,
+		"erasableSyntaxOnly": true,
+		"jsx": "react-jsx",
+		"types": ["chrome", "node"]
+	},
+	"include": [".wxt/wxt.d.ts", "src", "scripts", "tests", "wxt.config.ts", "vitest.config.ts"],
+	"exclude": ["tests/fixtures"]
+}
