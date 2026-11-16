@@ -1,6 +1,15 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
+/* Upstream scanned only packages/extension; core, llms and page-controller were separate
+   packages there (ADR-0002 folds them into src/), and the restoration tooling (scripts,
+   tests) did not exist, so keep them out of the class scan. */
+@source not '../core';
+@source not '../llms';
+@source not '../page-controller';
+@source not '../../scripts';
+@source not '../../tests';
+
 @custom-variant dark (&:is(.dark *));
 
 :root {
