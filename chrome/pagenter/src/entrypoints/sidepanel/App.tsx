@@ -1,3 +1,8 @@
+import { HistoryList } from '@/components/HistoryList'
+import { SniffView } from '@/components/sniff/SniffView'
+import { TipScriptConfirmDialog } from '@/components/TipScriptConfirmDialog'
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from '@/components/ui/input-group'
+import { exportSessionAsMarkdown } from '@/lib/session-export'
 import { DEFAULT_SYSTEM_INSTRUCTION, resolveLlmConfig } from '@/agent/constants'
 import { callApiByProjectAndTool, callUpstreamMcpByName } from '@/agent/exposedApis'
 import { MultiPageAgent } from '@/agent/MultiPageAgent'
@@ -34,6 +39,15 @@ import {
 import { probeCapabilities } from '@/llms'
 
 const BATCH_2_MODULES = [
+	// batch 5 (sidepanel sub-views fork): temporary references, replaced by the real App
+	HistoryList,
+	SniffView,
+	TipScriptConfirmDialog,
+	InputGroup,
+	InputGroupAddon,
+	InputGroupButton,
+	InputGroupTextarea,
+	exportSessionAsMarkdown,
 	MultiPageAgent,
 	callApiByProjectAndTool,
 	callUpstreamMcpByName,
