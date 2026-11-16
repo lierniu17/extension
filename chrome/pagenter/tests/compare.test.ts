@@ -270,3 +270,46 @@ describe('compareSources third-party exclusion (AC-14)', () => {
 		expect(r.excluded.map((d) => d.origin)).toEqual(['(build helper)'])
 	})
 })
+
+describe('compareSources namespace-object references', () => {
+	// rollup names a namespace object after the module file, chunk hash included
+	// (`SimulatorMaskSNxPmVn` from `SimulatorMask-SNxPmVn.js`, `SimulatorMask$1`
+	// when built from source), so references to it are compared by its members
+	const ns = (name: string, members: string) =>
+		`const ${name} = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({\n  __proto__: null,\n  ${members}\n}, Symbol.toStringTag, { value: "Module" }));`
+	const load = (ref: string) => `function load() { return Promise.resolve().then(() => ${ref}) }`
+
+	it('treats references to namespace objects with the same members as the same', async () => {
+		const r = await compareSources(
+			{ 'a.js': `${load('SimulatorMaskSNxPmVn')}\n${ns('SimulatorMaskSNxPmVn', 'SimulatorMask')}` },
+			{ 'a.js': `${load('SimulatorMask$1')}\n${ns('SimulatorMask$1', 'SimulatorMask')}` }
+		)
+		expect(names(r).same).toEqual(['load'])
+	})
+
+	it('still tells references apart when the namespace members differ', async () => {
+		const r = await compareSources(
+			{ 'a.js': `${load('SimulatorMaskSNxPmVn')}\n${ns('SimulatorMaskSNxPmVn', 'SimulatorMask')}` },
+			{ 'a.js': `${load('SimulatorMask$1')}\n${ns('SimulatorMask$1', 'SimulatorMask, extra')}` }
+		)
+		expect(names(r).different).toEqual(['load'])
+	})
+
+	it('still tells a namespace reference apart from a plain variable of the same name', async () => {
+		const r = await compareSources(
+			{ 'a.js': `${load('SimulatorMask$1')}\n${ns('SimulatorMask$1', 'SimulatorMask')}` },
+			{ 'a.js': `${load('SimulatorMask$1')}\nconst SimulatorMask$1 = {}` }
+		)
+		expect(names(r).different).toEqual(['load'])
+	})
+
+	it('leaves locals and property keys that merely share a namespace name alone', async () => {
+		// probe bundles carry namespaces such as `index`; a local `index` elsewhere is not one
+		const body = 'function at(list, index) { return { index, value: list[index], o: list.index } }'
+		const r = await compareSources(
+			{ 'a.js': `${body}\n${ns('index', 'a')}` },
+			{ 'a.js': body }
+		)
+		expect(names(r).same).toEqual(['at'])
+	})
+})

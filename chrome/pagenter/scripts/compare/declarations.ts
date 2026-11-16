@@ -260,7 +260,7 @@ function keyOf(
 	tokens: Token[],
 	from: number,
 	end: number,
-	rename: (n: string) => string
+	rename: (n: string, start: number) => string
 ): string {
 	const parts: string[] = []
 	const isId: boolean[] = []
@@ -288,7 +288,7 @@ function keyOf(
 			}
 		}
 		const id = t.identifier && !t.afterDot
-		parts.push(id ? rename(t.text) : t.text)
+		parts.push(id ? rename(t.text, t.start) : t.text)
 		isId.push(id)
 	}
 	return parts.join(' ')
@@ -306,6 +306,112 @@ function firstTokenAt(tokens: Token[], pos: number): number {
 }
 
 /**
+ * Namespace objects of a file, binding name -> stand-in token for references.
+ * Rollup names a namespace object after its module file, chunk hash included
+ * (`SimulatorMaskSNxPmVn` for `SimulatorMask-SNxPmVn.js`; `SimulatorMask$1`
+ * when the module is bundled from source), so a reference to it is compared
+ * by the namespace's member names instead. The stand-in is not an identifier,
+ * so it never equals a reference to an ordinary variable.
+ */
+function namespaceObjects(f: ParsedFile): Map<string, string> {
+	const out = new Map<string, string>()
+	for (const u of f.units) {
+		if (u.statement) continue
+		if (!isNamespaceObjectCode(f.formatted.slice(u.node.start, u.node.end))) continue
+		const members: string[] = []
+		const visit = (n: unknown): void => {
+			if (!n || typeof n !== 'object') return
+			const node = n as acorn.Node
+			if (node.type === 'ObjectExpression') {
+				for (const p of (node as acorn.ObjectExpression).properties) {
+					if (p.type !== 'Property') continue
+					const key = p.key.type === 'Identifier' ? p.key.name : String((p.key as acorn.Literal).value)
+					if (key !== '__proto__') members.push(key)
+				}
+				return
+			}
+			for (const v of Object.values(node)) {
+				if (Array.isArray(v)) v.forEach(visit)
+				else if (v && typeof v === 'object' && 'type' in v) visit(v)
+			}
+		}
+		visit(u.node)
+		out.set(u.rawName, `<namespace{${members.sort().join(',')}}>`)
+	}
+	return out
+}
+
+/** Every binding name declared anywhere inside `node` (params, variables, functions, classes, catch). */
+function localBindings(node: acorn.Node): Set<string> {
+	const out = new Set<string>()
+	const visit = (n: unknown): void => {
+		if (!n || typeof n !== 'object') return
+		const x = n as acorn.AnyNode
+		switch (x.type) {
+			case 'VariableDeclarator':
+				for (const name of patternNames(x.id)) out.add(name)
+				break
+			case 'FunctionDeclaration':
+			case 'FunctionExpression':
+			case 'ArrowFunctionExpression':
+				if ('id' in x && x.id) out.add(x.id.name)
+				for (const p of x.params) for (const name of patternNames(p)) out.add(name)
+				break
+			case 'ClassDeclaration':
+			case 'ClassExpression':
+				if (x.id) out.add(x.id.name)
+				break
+			case 'CatchClause':
+				for (const name of patternNames(x.param)) out.add(name)
+				break
+			default:
+				break
+		}
+		for (const v of Object.values(x)) {
+			if (Array.isArray(v)) v.forEach(visit)
+			else if (v && typeof v === 'object' && 'type' in v) visit(v)
+		}
+	}
+	visit(node)
+	return out
+}
+
+/**
+ * Positions of the identifiers inside `node` that read one of the namespace
+ * bindings in `nsByLocal`, mapped to its stand-in. Property keys, member
+ * names and names the declaration binds itself (a local `index` next to a
+ * namespace called `index`) are not references.
+ */
+function namespaceReferences(node: acorn.Node, nsByLocal: Map<string, string>): Map<number, string> {
+	const out = new Map<number, string>()
+	const shadowed = localBindings(node)
+	const visit = (n: unknown): void => {
+		if (!n || typeof n !== 'object') return
+		const x = n as acorn.AnyNode
+		if (x.type === 'Identifier') {
+			const ns = nsByLocal.get(x.name)
+			if (ns && !shadowed.has(x.name)) out.set(x.start, ns)
+			return
+		}
+		const computed = 'computed' in x && x.computed
+		for (const [k, v] of Object.entries(x)) {
+			if (k === 'property' && x.type === 'MemberExpression' && !computed) continue
+			if (
+				k === 'key' &&
+				!computed &&
+				(x.type === 'Property' || x.type === 'MethodDefinition' || x.type === 'PropertyDefinition')
+			)
+				continue
+			if (k === 'label') continue
+			if (Array.isArray(v)) v.forEach(visit)
+			else if (v && typeof v === 'object' && 'type' in v) visit(v)
+		}
+	}
+	visit(node)
+	return out
+}
+
+/**
  * Parse every file of a bundle and return its declarations.
  * `origins` maps an actual path to `{ rawName: origin }` (see decl-origin-plugin).
  */
@@ -319,21 +425,34 @@ export async function analyzeFiles(
 			.map(([p, code]) => parseFile(p.replace(/\\/g, '/'), code))
 	)
 	const byPath = new Map(parsed.map((f) => [f.path.replace(/\.js$/, ''), f]))
+	const namespaces = new Map(parsed.map((f) => [f, namespaceObjects(f)]))
 	const decls: Declaration[] = []
 
 	for (const f of parsed) {
-		const rename = (n: string): string => {
-			const imp = f.imports.get(n)
-			if (imp) {
-				const target = byPath.get(imp[0].replace(/\.js$/, ''))
-				const real = target?.exports.get(imp[1])
-				if (real) return normalizeName(real)
-			}
-			return normalizeName(n)
+		const fileNamespaces = namespaces.get(f)!
+		// local name -> namespace stand-in, for this file's own and imported namespaces
+		const nsByLocal = new Map(fileNamespaces)
+		for (const [local, [targetPath, imported]] of f.imports) {
+			const target = byPath.get(targetPath.replace(/\.js$/, ''))
+			const real = target?.exports.get(imported)
+			const ns = real ? namespaces.get(target!)!.get(real) : undefined
+			if (ns) nsByLocal.set(local, ns)
 		}
 		const tokens = tokenize(f.formatted)
 		const fileOrigins = origins[f.path] ?? {}
 		for (const u of f.units) {
+			const nsRefs = nsByLocal.size ? namespaceReferences(u.node, nsByLocal) : new Map()
+			const rename = (n: string, start: number): string => {
+				const ns = nsRefs.get(start)
+				if (ns) return ns
+				const imp = f.imports.get(n)
+				if (imp) {
+					const target = byPath.get(imp[0].replace(/\.js$/, ''))
+					const real = target?.exports.get(imp[1])
+					if (real) return normalizeName(real)
+				}
+				return normalizeName(n)
+			}
 			const from = firstTokenAt(tokens, u.node.start)
 			const key = asClassDeclaration(keyOf(tokens, from, u.node.end, rename))
 			decls.push({

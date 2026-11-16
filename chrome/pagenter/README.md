@@ -25,8 +25,8 @@ pnpm verify                      # build + typecheck + check:any + test + compar
 | 路径 | 内容 |
 | --- | --- |
 | `src/entrypoints/` | background、content、pagenter-bridge（主世界）、sidepanel、options、popup、hub、offscreen |
-| `src/core`、`src/llms`、`src/page-controller` | 上游三个包，作为子目录（core、llms 批次 2 已还原，page-controller 批次 3） |
-| `src/agent`、`src/lib` | 扩展侧的 agent 层（MultiPageAgent、Tabs/RemotePageController、tools）与共享模块（cdp、upstreamClient）；`src/lib/sniffDb.ts` 是批次 4 之前的占位 |
+| `src/core`、`src/llms`、`src/page-controller` | 上游三个包，作为子目录（core、llms 批次 2 已还原，page-controller 批次 3 已还原；`dom/dom_tree/index.js` 是 Pagenter 的重写版，不是上游的） |
+| `src/agent`、`src/lib` | 扩展侧的 agent 层（MultiPageAgent、Tabs/RemotePageController、tools）与共享模块（cdp、upstreamClient、元素拾取器 `elementPicker`）；`src/lib/sniffDb.ts` 是批次 4 之前的占位 |
 | `public/` | `_locales` 与图标，从产物原样复制 |
 | `scripts/compare/` | 对比脚本 |
 | `scripts/unchanged-files.ts` | 生成「未改动文件表」 |
@@ -48,7 +48,7 @@ pnpm compare --original <dir> --restored <dir> --out <dir> [--no-probe]
 
 - 两边 `.js` 都先用 prettier 格式化，再用 acorn 取顶层声明（函数、类、变量；不声明任何名字的顶层语句记作 `<statement>`）。WXT 给 background / content / bridge 包的 IIFE 会先拆开。
 - import / export 语句去掉；`import { e as getSession$1 }` 这类 Vite 短名别名映射回真名。
-- 比较的是去掉空白后的 token 序列（注释也算），并做三种归一：rollup 重名后缀（`$1`、`$d`、嵌套作用域里的 `current2`）去掉；prettier 因行宽才加的尾逗号去掉；键与值同名的属性（rollup 改名后写成的 `{ content: content2 }`）按简写 `{ content }` 比；rollup 给重名类写成的 `let X$1 = class X { ... };` 按 `class X { ... }` 比（同名的两个类谁被改名取决于 chunk 里还有什么）。代价：只差一个尾部数字的标识符（`x1` / `x2`）会被视为相同。
+- 比较的是去掉空白后的 token 序列（注释也算），并做三种归一：rollup 重名后缀（`$1`、`$d`、嵌套作用域里的 `current2`）去掉；prettier 因行宽才加的尾逗号去掉；键与值同名的属性（rollup 改名后写成的 `{ content: content2 }`）按简写 `{ content }` 比；rollup 给重名类写成的 `let X$1 = class X { ... };` 按 `class X { ... }` 比（同名的两个类谁被改名取决于 chunk 里还有什么）。代价：只差一个尾部数字的标识符（`x1` / `x2`）会被视为相同。对 rollup 模块命名空间对象的引用按命名空间的成员名比（产物里叫 `SimulatorMaskSNxPmVn`，带着库构建的 chunk hash；从源码构建叫 `SimulatorMask$1`），局部变量、属性名即使同名也不算引用。
 - 对应关系：按声明名配对，文件名与 chunk 拆分不影响；同名声明有多份时先按声明体配，再按「逻辑文件」（去掉 chunk hash 的路径，如 `chunks/db`）配；对不上的进「仅一方有」，由人判断是口径问题还是还原遗漏。
 - 排除项（不进三类清单，单独列在报告里）：
   - 新产物的第三方代码：构建时 `scripts/compare/decl-origin-plugin.ts` 记下每个声明来自哪个包（写到 `.output/compare/decl-origin/`，不进扩展目录）。模块代码取自 rollup 渲染结果，而 Vite 之后的 esbuild 还会改名（`Parse$1` → `Parse2`）、补 `var _a;`，所以按顺序把最终 chunk 的顶层语句与各模块的语句对齐，名字和语句取最终 chunk 的；对不齐（如 WXT 包了 IIFE 的入口）就退回用渲染结果。
