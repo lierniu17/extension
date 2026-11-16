@@ -125,7 +125,7 @@ export async function ensureCdpAttachedLocal(tabId: any, pinOnAttach = false) {
 	}
 	if (pinOnAttach) ambientPins.add(tabId)
 }
-export async function cdpSendLocal(tabId: any, method: any, params: any, options?: any) {
+export async function cdpSendLocal(tabId: any, method: any, params?: any, options?: any) {
 	await ensureCdpAttachedLocal(tabId, options?.pin !== false)
 	return chrome.debugger.sendCommand({ tabId }, method, params)
 }
@@ -145,7 +145,7 @@ async function callBackgroundProxy(payload: any) {
 	if (res.error) throw new Error(res.error)
 	return res.result
 }
-export async function cdpSendRemote(tabId: any, method: any, params: any, options?: any) {
+export async function cdpSendRemote(tabId: any, method: any, params?: any, options?: any) {
 	const start = performance.now()
 	try {
 		const result = await callBackgroundProxy({

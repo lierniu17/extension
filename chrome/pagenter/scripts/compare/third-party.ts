@@ -136,6 +136,15 @@ export const THIRD_PARTY: ThirdParty[] = [
 		upstreamRange: '^12.38.0',
 		probe: ['motion', 'motion/react'],
 	},
+	// motion's own dependency tree. `motion@12.38.0` allows newer framer-motion / motion-dom /
+	// motion-utils, which bundle different code (e.g. motion-utils >= 12.39.0 inlines
+	// `combineFunctions` into `pipe`). Fingerprinted against the bundle and resolved to the
+	// newest releases before 2026-04-16 (see 'fingerprint' above): framer-motion and
+	// motion-dom 12.38.0 (2026-03-17; next is 12.39.0 on 2026-05-18), motion-utils 12.36.0
+	// (2026-03-12; next is 12.39.0, which no longer has `combineFunctions`).
+	{ name: 'framer-motion', version: '12.38.0', source: 'fingerprint', probe: ['framer-motion'] },
+	{ name: 'motion-dom', version: '12.38.0', source: 'fingerprint', probe: ['motion-dom'] },
+	{ name: 'motion-utils', version: '12.36.0', source: 'fingerprint', probe: ['motion-utils'] },
 	{
 		name: 'next-themes',
 		version: '0.4.6',

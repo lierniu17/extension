@@ -39,3 +39,11 @@ export interface AgentConfig extends LLMConfig {
 	onDispose?: (agent: any) => void
 	[key: string]: any
 }
+
+export type AgentStatus = 'idle' | 'running' | 'completed' | 'error'
+
+/** Events in the agent history (steps, observations, errors…); shapes vary by `type`. */
+export type HistoricalEvent = any
+
+/** Transient activity the UI shows while a step runs (thinking, executing, retrying…). */
+export type AgentActivity = any
