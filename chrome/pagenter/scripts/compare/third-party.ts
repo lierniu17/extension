@@ -169,6 +169,15 @@ export const THIRD_PARTY: ThirdParty[] = [
 	{ name: '@wxt-dev/module-react', version: '1.2.2', source: 'upstream', upstreamRange: '^1.2.2' },
 	{ name: 'wxt', version: '0.20.20', source: 'upstream', upstreamRange: '^0.20.20' },
 	{ name: 'vite', version: '7.3.1', source: 'upstream', upstreamRange: '^7.3.1' },
+	// upstream's page-controller library build injects its CSS modules from JS with it
+	// (root package.json ^4.0.1, lockfile 4.0.1); the bundle's content script carries
+	// that injection, so the content build uses it too (see wxt.config.ts)
+	{
+		name: 'vite-plugin-css-injected-by-js',
+		version: '4.0.1',
+		source: 'upstream',
+		upstreamRange: '^4.0.1',
+	},
 	{ name: 'typescript', version: '5.9.3', source: 'upstream', upstreamRange: '^5.9.3' },
 	{ name: 'prettier', version: '3.8.1', source: 'upstream', upstreamRange: '^3.8.0' },
 	// acorn is in upstream's lockfile (8.15.0) as a transitive dependency only
