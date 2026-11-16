@@ -48,13 +48,13 @@ pnpm compare --original <dir> --restored <dir> --out <dir> [--no-probe]
 
 - 两边 `.js` 都先用 prettier 格式化，再用 acorn 取顶层声明（函数、类、变量；不声明任何名字的顶层语句记作 `<statement>`）。WXT 给 background / content / bridge 包的 IIFE 会先拆开。
 - import / export 语句去掉；`import { e as getSession$1 }` 这类 Vite 短名别名映射回真名。
-- 比较的是去掉空白后的 token 序列（注释也算），并做三种归一：rollup 重名后缀（`$1`、`$d`、嵌套作用域里的 `current2`）去掉；prettier 因行宽才加的尾逗号去掉；键与值同名的属性（rollup 改名后写成的 `{ content: content2 }`）按简写 `{ content }` 比。代价：只差一个尾部数字的标识符（`x1` / `x2`）会被视为相同。
+- 比较的是去掉空白后的 token 序列（注释也算），并做三种归一：rollup 重名后缀（`$1`、`$d`、嵌套作用域里的 `current2`）去掉；prettier 因行宽才加的尾逗号去掉；键与值同名的属性（rollup 改名后写成的 `{ content: content2 }`）按简写 `{ content }` 比；rollup 给重名类写成的 `let X$1 = class X { ... };` 按 `class X { ... }` 比（同名的两个类谁被改名取决于 chunk 里还有什么）。代价：只差一个尾部数字的标识符（`x1` / `x2`）会被视为相同。
 - 对应关系：按声明名配对，文件名与 chunk 拆分不影响；同名声明有多份时先按声明体配，再按「逻辑文件」（去掉 chunk hash 的路径，如 `chunks/db`）配；对不上的进「仅一方有」，由人判断是口径问题还是还原遗漏。
 - 排除项（不进三类清单，单独列在报告里）：
-  - 新产物的第三方代码：构建时 `scripts/compare/decl-origin-plugin.ts` 记下每个声明来自哪个包（写到 `.output/compare/decl-origin/`，不进扩展目录）。
-  - 原产物的第三方代码：原产物没有模块边界，靠「声明体与已知第三方声明相同」识别。已知第三方声明来自新产物和 vendor probe —— `third-party.ts` 里列了 `probe` 的包会被单独打成一个小 bundle（`.output/compare/probe/`）。新加依赖时把它加进 `third-party.ts`。
+  - 新产物的第三方代码：构建时 `scripts/compare/decl-origin-plugin.ts` 记下每个声明来自哪个包（写到 `.output/compare/decl-origin/`，不进扩展目录）。模块代码取自 rollup 渲染结果，而 Vite 之后的 esbuild 还会改名（`Parse$1` → `Parse2`）、补 `var _a;`，所以按顺序把最终 chunk 的顶层语句与各模块的语句对齐，名字和语句取最终 chunk 的；对不齐（如 WXT 包了 IIFE 的入口）就退回用渲染结果。
+  - 原产物的第三方代码：原产物没有模块边界，靠「声明体与已知第三方声明相同」识别。已知第三方声明来自新产物和 vendor probe —— `third-party.ts` 里列了 `probe` 的包会被单独打成一个小 bundle（`.output/compare/probe/`）。新加依赖时把它加进 `third-party.ts`。probe 用 `export *` 引入整包，不会像产物那样按调用处的实参再摇树（如 `gutters()` 无参调用时去掉 `config` 分支），这类声明要等真正用到它的代码还原后才会对上。
   - 构建辅助代码：`__vitePreload` 等 Vite/rollup 胶水代码与 rollup 的模块命名空间对象。
-- 版本核对：`third-party.ts` 是版本对照表（来源：产物 / 上游 v1.7.1 / 工具链），报告里逐个列出期望版本、lockfile 版本和产物里读到的版本。
+- 版本核对：`third-party.ts` 是版本对照表（来源：产物里读到的版本串 / 声明体指纹 / 上游 v1.7.1 / 工具链），报告里逐个列出期望版本、lockfile 版本和产物里读到的版本。
 
 ## 未改动文件表
 

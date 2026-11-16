@@ -6,6 +6,14 @@
 // - 'upstream'        not readable from the bundle; the version resolved by
 //                     upstream v1.7.1's package-lock.json for the range in its
 //                     packages/extension (or root) package.json (`upstreamRange`)
+// - 'fingerprint'     not readable as a string, but identified by matching the bundle's
+//                     declaration bodies against each published release (Pagenter's own
+//                     additions, not in upstream: CodeMirror for the script viewer).
+//                     Ties between releases whose bundled code is identical are broken by
+//                     publish date: the build falls between 2026-04-01 (@codemirror/view
+//                     6.41.0, matched) and 2026-04-16 (@lezer/lr 1.4.9, not matched).
+//                     Transitive ones are direct dependencies too so the probe can
+//                     import them, and pnpm.overrides keeps a single copy of each.
 // - 'tooling'         added for the restoration tooling only (tests), not in upstream
 //
 // `probe` lists the import specifiers bundled into the vendor probe, whose
@@ -13,7 +21,7 @@
 // Packages without `probe` are CSS-only, type-only, build tools, or too large
 // to probe (simple-icons); they are version-checked only.
 
-export type VersionSource = 'bundle' | 'upstream' | 'tooling'
+export type VersionSource = 'bundle' | 'upstream' | 'fingerprint' | 'tooling'
 
 export interface ThirdParty {
 	name: string
@@ -165,6 +173,32 @@ export const THIRD_PARTY: ThirdParty[] = [
 	{ name: 'prettier', version: '3.8.1', source: 'upstream', upstreamRange: '^3.8.0' },
 	// acorn is in upstream's lockfile (8.15.0) as a transitive dependency only
 	{ name: 'acorn', version: '8.15.0', source: 'upstream' },
+	// CodeMirror and its dependency tree (chunks/cards, ScriptViewer). The @lezer entries come
+	// first so the probe renames the same same-named classes the bundle does. Ties (bundled
+	// code identical across releases), resolved to the newest release before 2026-04-16:
+	// @lezer/common 1.5.1 / 1.5.2 (1.5.2 is from 2026-04-08, inside the window: either fits),
+	// @marijn/find-cluster-break 1.0.0-1.0.2, style-mod 4.1.2 / 4.1.3, theme-one-dark
+	// 6.1.2 / 6.1.3, crelt 1.0.5 / 1.0.6, @uiw 4.25.0-4.25.9, @babel/runtime helpers.
+	{ name: '@lezer/common', version: '1.5.2', source: 'fingerprint', probe: ['@lezer/common'] },
+	{ name: '@lezer/highlight', version: '1.2.3', source: 'fingerprint', probe: ['@lezer/highlight'] },
+	{ name: '@lezer/lr', version: '1.4.8', source: 'fingerprint', probe: ['@lezer/lr'] },
+	{ name: '@lezer/javascript', version: '1.5.4', source: 'fingerprint', probe: ['@lezer/javascript'] },
+	{ name: '@marijn/find-cluster-break', version: '1.0.2', source: 'fingerprint', probe: ['@marijn/find-cluster-break'] },
+	{ name: '@uiw/react-codemirror', version: '4.25.9', source: 'fingerprint', probe: ['@uiw/react-codemirror'] },
+	{ name: '@uiw/codemirror-extensions-basic-setup', version: '4.25.9', source: 'fingerprint', probe: ['@uiw/codemirror-extensions-basic-setup'] },
+	{ name: '@codemirror/lang-javascript', version: '6.2.5', source: 'fingerprint', probe: ['@codemirror/lang-javascript'] },
+	{ name: '@codemirror/theme-one-dark', version: '6.1.3', source: 'fingerprint', probe: ['@codemirror/theme-one-dark'] },
+	{ name: '@codemirror/state', version: '6.6.0', source: 'fingerprint', probe: ['@codemirror/state'] },
+	{ name: '@codemirror/view', version: '6.41.0', source: 'fingerprint', probe: ['@codemirror/view'] },
+	{ name: '@codemirror/language', version: '6.12.3', source: 'fingerprint', probe: ['@codemirror/language'] },
+	{ name: '@codemirror/commands', version: '6.10.3', source: 'fingerprint', probe: ['@codemirror/commands'] },
+	{ name: '@codemirror/autocomplete', version: '6.20.1', source: 'fingerprint', probe: ['@codemirror/autocomplete'] },
+	{ name: '@codemirror/search', version: '6.6.0', source: 'fingerprint', probe: ['@codemirror/search'] },
+	{ name: '@codemirror/lint', version: '6.9.5', source: 'fingerprint', probe: ['@codemirror/lint'] },
+	{ name: 'style-mod', version: '4.1.3', source: 'fingerprint', probe: ['style-mod'] },
+	{ name: 'w3c-keyname', version: '2.2.8', source: 'fingerprint', probe: ['w3c-keyname'] },
+	{ name: 'crelt', version: '1.0.6', source: 'fingerprint', probe: ['crelt'] },
+	{ name: '@babel/runtime', version: '7.29.2', source: 'fingerprint', probe: ['@babel/runtime/helpers/extends', '@babel/runtime/helpers/objectWithoutPropertiesLoose'] },
 	{ name: 'vitest', version: '5.1.0', source: 'tooling' },
 	{ name: 'yaml', version: '2.9.1', source: 'tooling' },
 ]
