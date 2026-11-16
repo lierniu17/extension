@@ -1,4 +1,3 @@
-// TODO(types)
 /**
  * Hint markers: a yellow Vimium-style label on top of every interactive element.
  * The container is a top-layer popover (when supported) so markers stay above
@@ -40,7 +39,7 @@ export function renderHintMarkers(nodes: HintMarkerItem[]) {
 
 	if (hasPopoverSupport) {
 		try {
-			;(container as any).showPopover()
+			;container.showPopover()
 		} catch (_e) {
 			// ignore
 		}
@@ -130,6 +129,6 @@ export function renderHintMarkers(nodes: HintMarkerItem[]) {
 	}
 
 	container.appendChild(fragment)
-	;((window as any)._highlightCleanupFunctions =
-		(window as any)._highlightCleanupFunctions || []).push(...allCleanupFns)
+	;(window._highlightCleanupFunctions =
+		window._highlightCleanupFunctions || []).push(...allCleanupFns)
 }

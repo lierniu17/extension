@@ -1,7 +1,7 @@
-// TODO(types)
 import pagenterStrategy from './dom_tree/index.js'
 import {
 	ElementDomNode,
+	ElementExtra,
 	FlatDomTree,
 	InteractiveElementDomNode,
 	TextDomNode,
@@ -90,10 +90,10 @@ export function getFlatTree(config: DomConfig): FlatDomTree {
 		interactiveBlacklist,
 		interactiveWhitelist,
 		extractionMode: config.extractionMode || 'interactive',
-	}) as any
+	})
 
 	const elements = { rootId: result.rootId, map: result.map } as FlatDomTree
-	const interactiveNodes: any[] = result.interactiveNodes || []
+	const interactiveNodes = result.interactiveNodes || []
 
 	// Assign Vimium-style hint labels in document order
 	const hintStrings = generateHintStrings(interactiveNodes.length)
@@ -198,7 +198,7 @@ interface TreeNode {
 	isTopElement?: boolean
 	isNew?: boolean
 	hintLabel?: string
-	extra?: Record<string, any>
+	extra?: ElementExtra
 }
 
 /**
@@ -570,14 +570,14 @@ export function getElementTextMap(simplifiedHTML: string) {
 }
 
 export function cleanUpHighlights() {
-	const cleanupFunctions = (window as any)._highlightCleanupFunctions || []
+	const cleanupFunctions = window._highlightCleanupFunctions || []
 	for (const cleanup of cleanupFunctions) {
 		if (typeof cleanup === 'function') {
 			cleanup()
 		}
 	}
 
-	;(window as any)._highlightCleanupFunctions = []
+	;window._highlightCleanupFunctions = []
 }
 
 // 监听 URL 的任何变化，立刻清空 highLights
@@ -594,7 +594,7 @@ window.addEventListener('beforeunload', () => {
 	cleanUpHighlights()
 })
 
-const navigation = (window as any).navigation
+const navigation = window.navigation
 if (navigation && typeof navigation.addEventListener === 'function') {
 	navigation.addEventListener('navigate', () => {
 		// console.log('Navigation event detected, highlights cleaned up.')

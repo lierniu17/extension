@@ -1,4 +1,3 @@
-// TODO(types)
 /**
  * Copyright (C) 2025 Alibaba Group Holding Limited
  * All rights reserved.
@@ -43,7 +42,7 @@ export interface BrowserState {
 	footer: string
 }
 
-interface ActionResult {
+export interface ActionResult {
 	success: boolean
 	message: string
 }
