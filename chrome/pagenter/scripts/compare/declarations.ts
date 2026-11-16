@@ -243,6 +243,9 @@ function tokenize(code: string): Token[] {
  * Tokens from index `from` up to source position `end`, joined into a key.
  * Trailing commas (`,` right before `)`/`]`/`}`) are dropped: prettier adds
  * them only when a line is broken, which depends on identifier lengths.
+ * A property whose key equals its (normalized) value, `{ content: content2 }`,
+ * is collapsed to shorthand `{ content }`: rollup writes the long form only
+ * because it renamed the value to dodge a name elsewhere in the chunk.
  */
 function keyOf(
 	tokens: Token[],
@@ -251,13 +254,33 @@ function keyOf(
 	rename: (n: string) => string
 ): string {
 	const parts: string[] = []
+	const isId: boolean[] = []
 	for (let i = from; i < tokens.length; i++) {
 		const t = tokens[i]
 		if (t.start >= end) break
-		if (t.text === ')' || t.text === ']' || t.text === '}') {
-			if (parts[parts.length - 1] === ',') parts.pop()
+		if (t.text === ',' || t.text === '}' || t.text === '=') {
+			const n = parts.length
+			if (
+				n >= 4 &&
+				parts[n - 2] === ':' &&
+				isId[n - 1] &&
+				isId[n - 3] &&
+				parts[n - 1] === parts[n - 3] &&
+				(parts[n - 4] === '{' || parts[n - 4] === ',')
+			) {
+				parts.length = n - 2
+				isId.length = n - 2
+			}
 		}
-		parts.push(t.identifier && !t.afterDot ? rename(t.text) : t.text)
+		if (t.text === ')' || t.text === ']' || t.text === '}') {
+			if (parts[parts.length - 1] === ',') {
+				parts.pop()
+				isId.pop()
+			}
+		}
+		const id = t.identifier && !t.afterDot
+		parts.push(id ? rename(t.text) : t.text)
+		isId.push(id)
 	}
 	return parts.join(' ')
 }

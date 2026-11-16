@@ -29,6 +29,11 @@ describe('findUnmarkedAny', () => {
 		expect(findUnmarkedAny(files)).toEqual(['src/a.ts', 'src/d.ts'])
 	})
 
+	it('leaves upstream files kept verbatim (AC-7) alone, since their any is upstream typing', () => {
+		const files = { 'src/llms/errors.ts': 'const a: any = 1', 'src/e.ts': 'const e: any = 1' }
+		expect(findUnmarkedAny(files, new Set(['src/llms/errors.ts']))).toEqual(['src/e.ts'])
+	})
+
 	it('finds no unmarked file in src/', () => {
 		const out = execFileSync(process.execPath, ['--experimental-strip-types', '--no-warnings', 'scripts/check-todo-types.ts'], {
 			cwd: PROJECT_DIR,

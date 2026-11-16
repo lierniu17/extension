@@ -152,6 +152,30 @@ describe('compareSources classification', () => {
 		expect(names(r).same).toEqual(['f'])
 	})
 
+	it('treats a property written out only because rollup renamed its value (content: content2) as shorthand', async () => {
+		// rollup renames a local that collides with a top-level name elsewhere in
+		// the chunk; a shorthand property `{ content }` then prints as `{ content: content2 }`
+		const r = await compareSources(
+			{
+				'a.js':
+					'function f(content2, replace2) { const { search, replace: replace3 } = content2; return { type: "o", content: content2, replace: replace2 } }',
+			},
+			{
+				'a.js':
+					'function f(content, replace) { const { search, replace: replace3 } = content; return { type: "o", content, replace } }',
+			}
+		)
+		expect(names(r).same).toEqual(['f'])
+	})
+
+	it('still tells a property apart from shorthand when key and value differ', async () => {
+		const r = await compareSources(
+			{ 'a.js': 'function f(content, text) { return { content: text } }' },
+			{ 'a.js': 'function f(content, text) { return { content } }' }
+		)
+		expect(names(r).different).toEqual(['f'])
+	})
+
 	it('compares comments inside a declaration body', async () => {
 		const r = await compareSources(
 			{ 'a.js': 'function f() {\n  // 单个 body 超过 256KB 就截断\n  return 1\n}' },
