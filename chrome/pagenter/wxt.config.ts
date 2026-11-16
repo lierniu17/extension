@@ -1,8 +1,10 @@
 import tailwindcss from '@tailwindcss/vite'
 import { readFileSync } from 'node:fs'
+import cssInjectedByJsPlugin from 'vite-plugin-css-injected-by-js'
 import { defineConfig } from 'wxt'
 
 import { declOriginPlugin, resetDeclOrigin } from './scripts/compare/decl-origin-plugin.ts'
+import { cssInjectionInsideIifePlugin } from './scripts/css-injection-inside-iife.ts'
 
 const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'))
 
@@ -18,6 +20,23 @@ export default defineConfig({
 	modules: ['@wxt-dev/module-react'],
 	hooks: {
 		'build:before': () => resetDeclOrigin(DECL_ORIGIN_DIR),
+		// The bundle consumed page-controller as upstream's library build, which
+		// injects its CSS modules (SimulatorMask, cursor) from JS via
+		// vite-plugin-css-injected-by-js instead of emitting a stylesheet.
+		// Only the content script carries page-controller, so only its build gets it.
+		// See scripts/css-injection-inside-iife.ts for why the injection is moved.
+		'vite:build:extendConfig': (entrypoints, viteConfig) => {
+			if (entrypoints.some((e) => e.name === 'content')) {
+				viteConfig.plugins = [
+					...(viteConfig.plugins ?? []),
+					cssInjectedByJsPlugin(),
+					cssInjectionInsideIifePlugin(),
+				]
+				// Otherwise Vite's own library-mode injection (`__vite_style__`) inlines
+				// the CSS first and the plugin sees no stylesheet.
+				viteConfig.build = { ...viteConfig.build, cssCodeSplit: false }
+			}
+		},
 	},
 	vite: () => ({
 		plugins: [tailwindcss(), declOriginPlugin(DECL_ORIGIN_DIR)],

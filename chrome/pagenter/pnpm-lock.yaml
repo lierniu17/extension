@@ -193,6 +193,9 @@ importers:
       vite:
         specifier: 7.3.1
         version: 7.3.1(@types/node@25.5.0)(jiti@2.7.0)(lightningcss@1.32.0)(yaml@2.9.1)
+      vite-plugin-css-injected-by-js:
+        specifier: 4.0.1
+        version: 4.0.1(vite@7.3.1(@types/node@25.5.0)(jiti@2.7.0)(lightningcss@1.32.0)(yaml@2.9.1))
       vitest:
         specifier: 5.1.0
         version: 5.1.0(@types/node@25.5.0)(vite@7.3.1(@types/node@25.5.0)(jiti@2.7.0)(lightningcss@1.32.0)(yaml@2.9.1))
@@ -2584,6 +2587,11 @@ packages:
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
 
+  vite-plugin-css-injected-by-js@4.0.1:
+    resolution: {integrity: sha512-WfyRojojQyAO/KzWf+efcXpTPv6zJPXaRmr9EYq5a4v5I3PWCR7kR01hiri2lW6+rHm3a57kpwsf+iahIJi1Qw==}
+    peerDependencies:
+      vite: 7.3.1
+
   vite@7.3.1:
     resolution: {integrity: sha512-w+N7Hifpc3gRjZ63vYBXA56dvvRlNWRczTdmCBBa+CotUzAPf5b7YMdMR/8CQoeYE5LX3W4wj6RYTgonm1b9DA==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -4920,6 +4928,10 @@ snapshots:
       - terser
       - tsx
       - yaml
+
+  vite-plugin-css-injected-by-js@4.0.1(vite@7.3.1(@types/node@25.5.0)(jiti@2.7.0)(lightningcss@1.32.0)(yaml@2.9.1)):
+    dependencies:
+      vite: 7.3.1(@types/node@25.5.0)(jiti@2.7.0)(lightningcss@1.32.0)(yaml@2.9.1)
 
   vite@7.3.1(@types/node@25.5.0)(jiti@2.7.0)(lightningcss@1.32.0)(yaml@2.9.1):
     dependencies:

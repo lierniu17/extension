@@ -16,7 +16,7 @@ const blobs: Record<string, string> = JSON.parse(
 )
 
 /** Directories whose batch is done: an unchanged file under them must exist. */
-const RESTORED_DIRS = ['src/llms/', 'src/core/', 'public/']
+const RESTORED_DIRS = ['src/llms/', 'src/core/', 'src/page-controller/', 'public/']
 
 function gitBlobId(content: Buffer): string {
 	return createHash('sha1')

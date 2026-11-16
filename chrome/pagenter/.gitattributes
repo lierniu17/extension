@@ -8,3 +8,5 @@ public/_locales/** -text
 # Prompts are inlined byte-for-byte by ?raw; the bundle has them with CRLF
 src/core/prompts/*.md -text
 src/agent/*.md -text
+# CSS modules: the class-name hash is taken over the raw file; the bundle was built from CRLF files
+src/page-controller/mask/*.css -text
