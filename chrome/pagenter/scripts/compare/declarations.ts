@@ -224,6 +224,13 @@ interface Token {
 	afterDot: boolean
 }
 
+/**
+ * A string literal that is a relative path to a hashed chunk, as rollup writes
+ * in dynamic imports: `"./kvStore-B3infbmv.js"`. The hash depends on the
+ * chunk's content, so it is dropped (`"./kvStore.js"`), like chunk file names.
+ */
+const CHUNK_PATH_LITERAL = /^(["'])(\.{1,2}\/(?:[\w.-]+\/)*[\w.-]+?)-[\w-]{8}\.js\1$/
+
 function tokenize(code: string): Token[] {
 	const out: Token[] = []
 	const comments: Token[] = []
@@ -236,7 +243,8 @@ function tokenize(code: string): Token[] {
 			comments.push({ start, text: `/*${text.trim()}*/`, identifier: false, afterDot: false })
 		},
 	})) {
-		const text = code.slice(tok.start, tok.end)
+		let text = code.slice(tok.start, tok.end)
+		if (tok.type.label === 'string') text = text.replace(CHUNK_PATH_LITERAL, '$1$2.js$1')
 		out.push({
 			start: tok.start,
 			text,

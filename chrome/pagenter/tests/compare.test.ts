@@ -212,6 +212,37 @@ describe('compareSources classification', () => {
 		expect(names(r).different).toEqual(['Other', 'Range'])
 	})
 
+	it('ignores the chunk hash in a dynamic import path (./kvStore-AAAAAAAA.js)', async () => {
+		const r = await compareSources(
+			{
+				'chunks/db-AAAAAAAA.js':
+					'async function del() { await import("./kvStore-B3infbmv.js"); await import("../chunks/external-link-C2lz2rEA.js") }',
+			},
+			{
+				'chunks/db-BBBBBBBB.js':
+					'async function del() { await import("./kvStore-CuVmTQG6.js"); await import("../chunks/external-link-Xy-12_ab.js") }',
+			}
+		)
+		expect(names(r).same).toEqual(['del'])
+		expect(names(r).different).toEqual([])
+	})
+
+	it('still tells dynamic imports of different chunks apart', async () => {
+		const r = await compareSources(
+			{ 'chunks/db-AAAAAAAA.js': 'async function del() { await import("./kvStore-B3infbmv.js") }' },
+			{ 'chunks/db-BBBBBBBB.js': 'async function del() { await import("./sessions-CuVmTQG6.js") }' }
+		)
+		expect(names(r).different).toEqual(['del'])
+	})
+
+	it('keeps hash-like suffixes in strings that are not relative chunk paths', async () => {
+		const r = await compareSources(
+			{ 'background.js': 'const FILE = "release-B3infbmv.js"' },
+			{ 'background.js': 'const FILE = "release-CuVmTQG6.js"' }
+		)
+		expect(names(r).different).toEqual(['FILE'])
+	})
+
 	it('compares comments inside a declaration body', async () => {
 		const r = await compareSources(
 			{ 'a.js': 'function f() {\n  // 单个 body 超过 256KB 就截断\n  return 1\n}' },
