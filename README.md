@@ -31,7 +31,7 @@ Chrome Manifest V3 扩展，当前目录是已打包的 1.8.0 版本（含弹窗
 
 ```bash
 cd vscode/drag-import
-nvm use          # 仓库根目录 .nvmrc 为 Node.js 20
+nvm use          # 仓库根目录 .nvmrc 为 Node.js 22
 npm install
 npm run compile  # 或 npm run watch
 ```
