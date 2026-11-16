@@ -1,4 +1,3 @@
-// TODO(types)
 // Content blocks: long code travels outside the JSON as @@@BLK id ... @@@END id
 // and is referenced from it as "@@BLK:id@@".
 
@@ -12,12 +11,12 @@ const BLOCK_CLOSE_LINE_RE = new RegExp(
 	`^${escapeRegExp(BLOCK_CLOSE_PREFIX)}[ \\t]+(${BLOCK_ID_PATTERN})[ \\t]*$`
 )
 const BLOCK_REF_RE = new RegExp(`^@@BLK:(${BLOCK_ID_PATTERN})@@$`)
-export function splitBlocks(text: any) {
+export function splitBlocks(text: string) {
 	const lines = text.split('\n')
-	const blocks = new Map()
-	const duplicates = new Set()
+	const blocks = new Map<string, string>()
+	const duplicates = new Set<string>()
 	const controlLines = []
-	let unterminated: any = null
+	let unterminated: string | null = null
 	let i = 0
 	while (i < lines.length) {
 		const openMatch = BLOCK_OPEN_LINE_RE.exec(lines[i])
@@ -56,10 +55,10 @@ export function splitBlocks(text: any) {
 		duplicates: [...duplicates],
 	}
 }
-export function resolveBlockRefs(value: any, blocks: any) {
-	const missing: any = []
-	const missingSeen = new Set()
-	const walk: any = (node: any) => {
+export function resolveBlockRefs(value: unknown, blocks: Map<string, string>) {
+	const missing: string[] = []
+	const missingSeen = new Set<string>()
+	const walk = (node: unknown): unknown => {
 		if (typeof node === 'string') {
 			const match = BLOCK_REF_RE.exec(node)
 			if (!match) return node
@@ -73,7 +72,7 @@ export function resolveBlockRefs(value: any, blocks: any) {
 		}
 		if (Array.isArray(node)) return node.map(walk)
 		if (node !== null && typeof node === 'object') {
-			const out: any = {}
+			const out: Record<string, unknown> = {}
 			for (const [k, v] of Object.entries(node)) {
 				out[k] = walk(v)
 			}
@@ -83,20 +82,22 @@ export function resolveBlockRefs(value: any, blocks: any) {
 	}
 	return { value: walk(value), missing }
 }
-export function hasBlockMarkers(text: any) {
-	return text.split('\n').some((line: any) => BLOCK_OPEN_LINE_RE.test(line))
+export function hasBlockMarkers(text: string) {
+	return text.split('\n').some((line) => BLOCK_OPEN_LINE_RE.test(line))
 }
 const INLINE_CODE_MIN_LENGTH = 200
-function looksInlinedCode(value: any) {
+function looksInlinedCode(value: unknown): value is string {
 	if (typeof value !== 'string') return false
 	if (BLOCK_REF_RE.test(value)) return false
 	return value.includes('\n') || value.length > INLINE_CODE_MIN_LENGTH
 }
-export function detectInlinedCode(parsedRaw: any) {
-	const warnings: any = []
-	const action = parsedRaw?.action
+export function detectInlinedCode(parsedRaw: Record<string, unknown> | null) {
+	const warnings: string[] = []
+	const action = parsedRaw?.action as
+		| { execute_javascript?: { script?: unknown }; update_script?: { patches?: unknown } }
+		| undefined
 	if (!action || typeof action !== 'object') return warnings
-	const describe = (path: any, value: any) => {
+	const describe = (path: string, value: string) => {
 		const lines = value.split('\n').length
 		return `${path} was inlined as a JSON string (${value.length} chars, ${lines} line(s)) instead of a @@BLK content block`
 	}
@@ -106,9 +107,9 @@ export function detectInlinedCode(parsedRaw: any) {
 	}
 	const upd = action.update_script
 	if (upd && Array.isArray(upd.patches)) {
-		upd.patches.forEach((patch: any, idx: any) => {
+		upd.patches.forEach((patch: unknown, idx: number) => {
 			if (!patch || typeof patch !== 'object') return
-			const p = patch
+			const p = patch as { search?: unknown; replace?: unknown }
 			if (looksInlinedCode(p.search)) {
 				warnings.push(describe(`update_script.patches[${idx}].search`, p.search))
 			}
@@ -119,6 +120,6 @@ export function detectInlinedCode(parsedRaw: any) {
 	}
 	return warnings
 }
-function escapeRegExp(s: any) {
+function escapeRegExp(s: string) {
 	return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }

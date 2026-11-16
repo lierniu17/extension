@@ -1,13 +1,55 @@
-// TODO(types)
 import chalk from 'chalk'
 import * as z from 'zod/v4'
 
 import { InvokeError, InvokeErrorType } from '../../llms'
+import type { AgentOutput, PageAgentTool } from '../types'
 import { detectInlinedCode, hasBlockMarkers, resolveBlockRefs, splitBlocks } from './contentBlocks'
 import { repairJsonText } from './jsonRepair'
 
 const log = console.log.bind(console, chalk.yellow('[autoFixer]'))
 const MAX_PARSE_RETRIES = 2
+
+/** What went wrong when a model answer could not be parsed. */
+export type ParseErrorType =
+	| 'invalid_json'
+	| 'unterminated_block'
+	| 'missing_block'
+	| 'empty_json'
+	| 'missing_action'
+
+export type ParseFailureSummary = ReturnType<typeof buildParseFailureSummary>
+
+/** The parsed JSON before validation: any object, fields still unchecked. */
+type RawAgentOutput = Record<string, unknown>
+
+/**
+ * The parts of a zod v4 schema that the prompt serializer reads. These are
+ * zod internals (`def`, `minLength`…), so they are described structurally.
+ */
+interface ZodIntrospect {
+	def?: {
+		type?: string
+		innerType?: ZodIntrospect
+		defaultValue?: unknown
+		element?: ZodIntrospect
+		values?: unknown[]
+		options?: ZodIntrospect[]
+	}
+	description?: string
+	minLength?: number | null
+	maxLength?: number | null
+	isInt?: boolean
+	minValue?: number | null
+	maxValue?: number | null
+	options?: unknown[]
+}
+
+interface FieldMeta {
+	isOptional: boolean
+	typeLabel: string
+	description?: string
+	defaultValue?: unknown
+}
 /**
  * Parse one model answer into the agent output: reflection fields plus one
  * validated `action`. Long code may travel outside the JSON in content blocks.
@@ -16,9 +58,13 @@ const MAX_PARSE_RETRIES = 2
  */
 export async function parseAgentOutput(
 	text: string,
-	tools: Map<string, any>,
-	retryLLM?: (retry: { attempt: number; maxAttempts: number; summary: any }) => Promise<string>
-): Promise<any> {
+	tools: Map<string, PageAgentTool>,
+	retryLLM?: (retry: {
+		attempt: number
+		maxAttempts: number
+		summary: ParseFailureSummary
+	}) => Promise<string>
+): Promise<AgentOutput> {
 	let lastText = text
 	let lastError
 	for (let attempt = 0; attempt <= MAX_PARSE_RETRIES; attempt++) {
@@ -49,7 +95,7 @@ export async function parseAgentOutput(
 				log(`inlined code detected (should use @@BLK blocks): ${inlineCodeWarnings.join('; ')}`)
 			}
 			const resolution = resolveBlockRefs(parsedRaw, split.blocks)
-			const parsed = resolution.value
+			const parsed = resolution.value as RawAgentOutput
 			if (resolution.missing.length > 0) {
 				const isTruncated =
 					split.unterminated !== null && resolution.missing.includes(split.unterminated)
@@ -58,7 +104,7 @@ export async function parseAgentOutput(
 					isTruncated ? 'unterminated_block' : 'missing_block',
 					isTruncated
 						? `Content block "${split.unterminated}" was referenced but its @@@END marker is missing (likely truncated output)`
-						: `Referenced content block(s) not found: ${resolution.missing.map((id: any) => `"${id}"`).join(', ')}. Each @@BLK:id@@ reference needs a matching @@@BLK id ... @@@END id block.`,
+						: `Referenced content block(s) not found: ${resolution.missing.map((id) => `"${id}"`).join(', ')}. Each @@BLK:id@@ reference needs a matching @@@BLK id ... @@@END id block.`,
 					extraction.summary.candidateCount
 				)
 				log('parse failed with summary:')
@@ -67,8 +113,8 @@ export async function parseAgentOutput(
 			}
 			if (parsed.action && typeof parsed.action === 'object') {
 				try {
-					parsed.action = validateAction(parsed.action, tools)
-				} catch (error: any) {
+					parsed.action = validateAction(parsed.action as Record<string, unknown>, tools)
+				} catch (error) {
 					if (error instanceof InvokeError) {
 						throw new InvokeError(
 							error.type,
@@ -94,7 +140,7 @@ export async function parseAgentOutput(
 			const result = applyReflectionFallbacks(parsed)
 			if (inlineCodeWarnings.length > 0) result.inlineCodeWarnings = inlineCodeWarnings
 			return result
-		} catch (e: any) {
+		} catch (e) {
 			lastError = e
 			if (attempt < MAX_PARSE_RETRIES && retryLLM) {
 				log(
@@ -103,7 +149,7 @@ export async function parseAgentOutput(
 				try {
 					const summary =
 						e instanceof InvokeError && e.rawResponse
-							? e.rawResponse
+							? (e.rawResponse as ParseFailureSummary)
 							: buildParseFailureSummary(
 									lastText,
 									'invalid_json',
@@ -115,7 +161,7 @@ export async function parseAgentOutput(
 						maxAttempts: MAX_PARSE_RETRIES + 1,
 						summary,
 					})
-				} catch (retryError: any) {
+				} catch (retryError) {
 					log('retry LLM call failed, giving up')
 					throw lastError
 				}
@@ -124,7 +170,7 @@ export async function parseAgentOutput(
 	}
 	throw lastError
 }
-function applyReflectionFallbacks(parsed: any) {
+function applyReflectionFallbacks(parsed: RawAgentOutput): AgentOutput {
 	if (parsed.progress != null && !Array.isArray(parsed.progress)) {
 		parsed.progress = [String(parsed.progress)]
 	}
@@ -137,9 +183,9 @@ function applyReflectionFallbacks(parsed: any) {
 	if (parsed.reasoning != null && typeof parsed.reasoning !== 'string') {
 		parsed.reasoning = JSON.stringify(parsed.reasoning)
 	}
-	return parsed
+	return parsed as unknown as AgentOutput
 }
-export function serializeToolsForPrompt(tools: any) {
+export function serializeToolsForPrompt(tools: Map<string, PageAgentTool>) {
 	const sections = []
 	for (const [name, t] of tools) {
 		const header = `- **${name}**: ${t.description}`
@@ -158,8 +204,8 @@ ${paramLines.join('\n')}`
 	}
 	return sections.join('\n')
 }
-function describeField(name: any, schema: any) {
-	const meta: any = inspectZodField(schema)
+function describeField(name: string, schema: unknown) {
+	const meta = inspectZodField(schema)
 	const optionalMark = meta.isOptional || meta.defaultValue !== void 0 ? '?' : ''
 	const defaultPart =
 		meta.defaultValue !== void 0 ? ` (default ${formatLiteral(meta.defaultValue)})` : ''
@@ -167,9 +213,9 @@ function describeField(name: any, schema: any) {
 	const descPart = meta.description ? ` — ${meta.description}` : ''
 	return `${name}${optionalMark}: ${typePart}${defaultPart}${descPart}`
 }
-function inspectZodField(schema: any) {
-	const meta: any = { isOptional: false, typeLabel: 'unknown' }
-	let cursor = schema
+function inspectZodField(schema: unknown): FieldMeta {
+	const meta: FieldMeta = { isOptional: false, typeLabel: 'unknown' }
+	let cursor = schema as ZodIntrospect | undefined
 	while (cursor?.def) {
 		if (cursor.description && !meta.description) meta.description = cursor.description
 		const t = cursor.def.type
@@ -195,7 +241,7 @@ function inspectZodField(schema: any) {
 	meta.typeLabel = formatTypeLabel(cursor)
 	return meta
 }
-function formatTypeLabel(schema: any): any {
+function formatTypeLabel(schema: ZodIntrospect | undefined): string {
 	const t = schema?.def?.type
 	if (!t) return 'unknown'
 	if (t === 'string') {
@@ -214,7 +260,7 @@ function formatTypeLabel(schema: any): any {
 	if (t === 'boolean') return 'boolean'
 	if (t === 'enum') {
 		const values = schema.options ?? []
-		return `enum [${values.map((v: any) => JSON.stringify(v)).join(' | ')}]`
+		return `enum [${values.map((v) => JSON.stringify(v)).join(' | ')}]`
 	}
 	if (t === 'array') {
 		const inner = schema.def?.element
@@ -229,11 +275,15 @@ function formatTypeLabel(schema: any): any {
 	}
 	if (t === 'union') {
 		const opts = schema.def?.options ?? []
-		return opts.map((o: any) => formatTypeLabel(o)).join(' | ')
+		return opts.map((o) => formatTypeLabel(o)).join(' | ')
 	}
 	return t
 }
-function rangeLabel(min: any, max: any, prefix?: any) {
+function rangeLabel(
+	min: number | null | undefined,
+	max: number | null | undefined,
+	prefix?: string
+) {
 	const effectiveMin =
 		min != null && Number.isFinite(min) && Math.abs(min) < Number.MAX_SAFE_INTEGER ? min : null
 	const effectiveMax =
@@ -244,7 +294,7 @@ function rangeLabel(min: any, max: any, prefix?: any) {
 	if (effectiveMax != null) return `${tag}<= ${effectiveMax}`
 	return null
 }
-function formatLiteral(value: any) {
+function formatLiteral(value: unknown) {
 	if (typeof value === 'string') return JSON.stringify(value)
 	if (typeof value === 'number' || typeof value === 'boolean') return String(value)
 	if (value === null) return 'null'
@@ -255,10 +305,10 @@ function formatLiteral(value: any) {
 		return `[unserializable ${typeof value}]`
 	}
 }
-export function extractJson(text: any) {
+export function extractJson(text: string) {
 	const candidates = collectJsonCandidates(text)
 	const actionCandidate = candidates.find(
-		(candidate: any) =>
+		(candidate) =>
 			candidate.parsed.action &&
 			typeof candidate.parsed.action === 'object' &&
 			!Array.isArray(candidate.parsed.action)
@@ -295,9 +345,9 @@ export function extractJson(text: any) {
 		),
 	}
 }
-function collectJsonCandidates(text: any) {
-	const candidates: any = []
-	const seen = new Set()
+function collectJsonCandidates(text: string) {
+	const candidates: JsonCandidate[] = []
+	const seen = new Set<string>()
 	const trimmed = text.trim()
 	pushJsonCandidate(candidates, seen, trimmed, 'full_text')
 	const codeFenceRegex = /```(?:json)?\s*([\s\S]*?)```/gi
@@ -316,7 +366,17 @@ function collectJsonCandidates(text: any) {
 	}
 	return candidates
 }
-function pushJsonCandidate(candidates: any, seen: any, text: any, source: any) {
+/** A JSON object found in the model answer, and where it was found. */
+interface JsonCandidate {
+	source: string
+	parsed: Record<string, unknown>
+}
+function pushJsonCandidate(
+	candidates: JsonCandidate[],
+	seen: Set<string>,
+	text: string,
+	source: string
+) {
 	if (!text || seen.has(text)) return
 	try {
 		const parsed = JSON.parse(text)
@@ -326,7 +386,7 @@ function pushJsonCandidate(candidates: any, seen: any, text: any, source: any) {
 		}
 	} catch {}
 }
-function extractBalancedJsonSnippets(text: any) {
+function extractBalancedJsonSnippets(text: string) {
 	const snippets = []
 	let depth = 0
 	let start = -1
@@ -363,10 +423,10 @@ function extractBalancedJsonSnippets(text: any) {
 	return snippets
 }
 export function buildParseFailureSummary(
-	text: any,
-	errorType: any,
-	message: any,
-	candidateCount: any
+	text: string,
+	errorType: ParseErrorType,
+	message: string,
+	candidateCount: number
 ) {
 	const normalized = text.replace(/\s+/g, ' ').trim()
 	const rawPreview = normalized.length > 800 ? `${normalized.slice(0, 800)}...` : normalized
@@ -383,18 +443,18 @@ export function buildParseFailureSummary(
 		candidateCount,
 	}
 }
-function sanitizeEnumFields(input: any, schema: any) {
-	const cleaned = { ...input }
+function sanitizeEnumFields(input: object, schema: z.ZodObject) {
+	const cleaned: Record<string, unknown> = { ...input }
 	for (const [key, fieldSchema] of Object.entries(schema.shape)) {
 		if (!(key in cleaned) || typeof cleaned[key] !== 'string') continue
-		let inner: any = fieldSchema
+		let inner = fieldSchema as ZodIntrospect | undefined
 		while (inner?.def?.innerType) {
 			inner = inner.def.innerType
 		}
 		const enumOptions = inner?.options
 		if (!enumOptions || !Array.isArray(enumOptions)) continue
 		if (!enumOptions.includes(cleaned[key])) {
-			const hasDefault = (fieldSchema as any)?.def?.type === 'default'
+			const hasDefault = (fieldSchema as ZodIntrospect)?.def?.type === 'default'
 			if (hasDefault) {
 				log(
 					`sanitizing enum field "${key}": "${cleaned[key]}" is not in [${enumOptions.join(', ')}], removing to let default apply`
@@ -410,7 +470,7 @@ function sanitizeEnumFields(input: any, schema: any) {
 	}
 	return cleaned
 }
-export function validateAction(action: any, tools: any) {
+export function validateAction(action: Record<string, unknown>, tools: Map<string, PageAgentTool>) {
 	const toolName = Object.keys(action)[0]
 	if (!toolName) return action
 	const tool = tools.get(toolName)

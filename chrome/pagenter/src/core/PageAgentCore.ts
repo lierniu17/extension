@@ -1,8 +1,9 @@
-// TODO(types)
 import chalk from 'chalk'
 import * as z from 'zod/v4'
 
 import { InvokeError, LLM } from '../llms'
+import type { LLMErrorDetail, LLMRetryDetail, Message, MessageContentPart } from '../llms'
+import type { BrowserState } from '../page-controller/PageController'
 import SUMMARIZATION_PROMPT from './prompts/summarization_prompt.md?raw'
 import SYSTEM_PROMPT from './prompts/system_prompt.md?raw'
 import { tools } from './tools'
@@ -14,8 +15,27 @@ import {
 	uid,
 	waitFor,
 } from './utils'
+import type {
+	AgentActivity,
+	AgentConfig,
+	AgentPageController,
+	AgentStatus,
+	AttachedScript,
+	ExecuteOptions,
+	ExecutionResult,
+	HistoricalEvent,
+	PageAgentTool,
+	ScriptPatch,
+	StepEvent,
+} from './types'
 
 export type * from './types'
+
+/** An error thrown by the LLM layer: an InvokeError, or anything else that may wrap an abort. */
+type MaybeInvokeError = { rawError?: { name?: string }; rawResponse?: unknown } | null | undefined
+
+/** Agent config after the constructor filled in the defaults. */
+export type ResolvedAgentConfig = AgentConfig & { maxSteps: number; historyWindowSize: number }
 
 const DEFAULT_CONTEXT_LENGTH = 32e3
 const SUMMARIZATION_THRESHOLD = 15
@@ -23,32 +43,32 @@ const SUMMARIZATION_COOLDOWN_STEPS = 5
 const SUMMARIZATION_MAX_FAILURES = 3
 const ERROR_MESSAGE_HEAD = 150
 const ERROR_MESSAGE_TAIL = 50
-function truncateErrorMessage(raw: any) {
+function truncateErrorMessage(raw: string) {
 	if (raw.length <= ERROR_MESSAGE_HEAD + ERROR_MESSAGE_TAIL + 3) return raw
 	return `${raw.slice(0, ERROR_MESSAGE_HEAD)}...${raw.slice(-ERROR_MESSAGE_TAIL)}`
 }
-function classifySoftFailure(message: any) {
+function classifySoftFailure(message: string) {
 	const lower = message.toLowerCase()
 	if (/invalid|validation|not\s+found|missing|required/.test(lower)) return 'InvalidArguments'
 	if (/timeout|timed\s*out|exceed/.test(lower)) return 'Timeout'
 	return 'UnexpectedEnvironment'
 }
-function classifyHardError(error: any) {
-	if (error?.rawError?.name === 'AbortError') return 'UserAborted'
+function classifyHardError(error: unknown) {
+	if ((error as MaybeInvokeError)?.rawError?.name === 'AbortError') return 'UserAborted'
 	if (error instanceof InvokeError) return 'ProviderError'
 	const msg = error instanceof Error ? error.message : String(error)
 	return classifySoftFailure(msg)
 }
 export class PageAgentCore extends EventTarget {
 	id = uid()
-	config: any
-	tools: any
+	config: ResolvedAgentConfig
+	tools: Map<string, PageAgentTool>
 	/** PageController for DOM operations */
-	pageController: any
+	pageController: AgentPageController
 	task = ''
 	taskId = ''
 	/** History events */
-	history: any = []
+	history: HistoricalEvent[] = []
 	/** Whether this agent has been disposed */
 	disposed = false
 	/**
@@ -56,12 +76,12 @@ export class PageAgentCore extends EventTarget {
 	 * If not set, ask_user tool will be disabled
 	 * @example onAskUser: (q) => window.prompt(q) || ''
 	 */
-	onAskUser: any
-	#status = 'idle'
-	#llm: any
+	onAskUser?: (question: string) => string | Promise<string>
+	#status: AgentStatus = 'idle'
+	#llm: LLM
 	#abortController = new AbortController()
-	#observations: any = []
-	#pendingScreenshots: any = []
+	#observations: string[] = []
+	#pendingScreenshots: string[] = []
 	#resolvedContextLength = DEFAULT_CONTEXT_LENGTH
 	get resolvedContextLength() {
 		return this.#resolvedContextLength
@@ -71,7 +91,7 @@ export class PageAgentCore extends EventTarget {
 	 * 每步都携带完整源码供 LLM 参考原始代码。
 	 * 如果用户未引用任何妙招，则为 null。
 	 */
-	#attachedScript: any = null
+	#attachedScript: AttachedScript | null = null
 	/**
 	 * 脚本版本管理：当前脚本的最新版本。
 	 * - 初始化来源：attached_script（如有）或第一次 execute_javascript 的完整脚本
@@ -79,11 +99,11 @@ export class PageAgentCore extends EventTarget {
 	 * - 每步通过 <current_script> 标签注入 prompt，供 LLM 参考
 	 * - 为 null 时表示尚未产生任何脚本（初次创作阶段）
 	 */
-	#currentScript: any = null
+	#currentScript: string | null = null
 	/** digest 模式：是否已向 LLM 发送过完整脚本 */
 	#scriptInjectedFull = false
 	/** digest 模式：最近一次 update_script 的 patches（供摘要注入） */
-	#lastAppliedPatches: any = []
+	#lastAppliedPatches: ScriptPatch[] = []
 	/**
 	 * LLM 自维护的「当前目标」。harness 默认透传上一步的 active_goal；
 	 * 首步等于 execute() 入参；每步 LLM 若在 reflection 中写入 active_goal 则覆盖。
@@ -105,7 +125,7 @@ export class PageAgentCore extends EventTarget {
 	 * - `content`：摘要正文，将原样塞入 `<history_summary>` 段
 	 * - 任务开始与失败回滚时为 null；摘要成功后写入；后续摘要会按累计模式合并
 	 */
-	#compressedHistory: any = null
+	#compressedHistory: { upToStepCount: number; content: string } | null = null
 	/** 摘要 LLM 调用进行中标记，防止并发 */
 	#summarizationInFlight = false
 	/** 上次摘要时覆盖的 step 数；新增 step 数距离它 ≥5 才触发下一次摘要 */
@@ -125,7 +145,12 @@ export class PageAgentCore extends EventTarget {
 	 */
 	#turnStepOffset = 0
 	/** internal states during a single task execution */
-	#states: any = {
+	#states: {
+		totalWaitTime: number
+		lastURL: string
+		browserState: BrowserState | null
+		consecutiveFailures: number
+	} = {
 		/** Accumulated wait time in seconds */
 		totalWaitTime: 0,
 		/** For detecting navigation */
@@ -135,7 +160,7 @@ export class PageAgentCore extends EventTarget {
 		/** Consecutive action failure count */
 		consecutiveFailures: 0,
 	}
-	constructor(config: any) {
+	constructor(config: AgentConfig) {
 		super()
 		this.config = {
 			...config,
@@ -149,9 +174,9 @@ export class PageAgentCore extends EventTarget {
 			maxCompletionTokens: config.maxCompletionTokens ?? 4096,
 		})
 		this.tools = new Map(tools)
-		this.pageController = config.pageController
-		this.#llm.addEventListener('retry', (e: any) => {
-			const { attempt, maxAttempts } = e.detail
+		this.pageController = config.pageController!
+		this.#llm.addEventListener('retry', (e) => {
+			const { attempt, maxAttempts } = (e as CustomEvent<LLMRetryDetail>).detail
 			this.#emitActivity({ type: 'retrying', attempt, maxAttempts })
 			this.history.push({
 				type: 'retry',
@@ -161,15 +186,15 @@ export class PageAgentCore extends EventTarget {
 			})
 			this.#emitHistoryChange()
 		})
-		this.#llm.addEventListener('error', (e: any) => {
-			const error = e.detail.error
+		this.#llm.addEventListener('error', (e) => {
+			const error = (e as CustomEvent<LLMErrorDetail>).detail.error as MaybeInvokeError
 			if (error?.rawError?.name === 'AbortError') return
 			const message = String(error)
 			this.#emitActivity({ type: 'error', message })
 			this.history.push({
 				type: 'error',
 				message,
-				rawResponse: error.rawResponse,
+				rawResponse: error!.rawResponse,
 			})
 			this.#emitHistoryChange()
 		})
@@ -199,11 +224,11 @@ export class PageAgentCore extends EventTarget {
 	 * Emit activity event - for transient UI feedback
 	 * @param activity - Current agent activity
 	 */
-	#emitActivity(activity: any) {
+	#emitActivity(activity: AgentActivity) {
 		this.dispatchEvent(new CustomEvent('activity', { detail: activity }))
 	}
 	/** Update status and emit event */
-	#setStatus(status: any) {
+	#setStatus(status: AgentStatus) {
 		if (this.#status !== status) {
 			this.#status = status
 			this.#emitStatusChange()
@@ -215,7 +240,7 @@ export class PageAgentCore extends EventTarget {
 	 * @experimental @internal
 	 * @note history change will be emitted before next step starts
 	 */
-	pushObservation(content: any) {
+	pushObservation(content: string) {
 		this.#observations.push(content)
 	}
 	/**
@@ -223,7 +248,7 @@ export class PageAgentCore extends EventTarget {
 	 * Used by tools (e.g. capture_tab_screenshot) to provide vision context.
 	 * @experimental
 	 */
-	pushScreenshot(dataUrl: any) {
+	pushScreenshot(dataUrl: string) {
 		if (this.config.supportsVision !== true) {
 			console.warn(
 				'[PageAgentCore] pushScreenshot called but config.supportsVision is not true; screenshot will be discarded to avoid sending image content to a text-only model. This usually means the host injected a vision-related tool without checking the capability bit.'
@@ -267,7 +292,7 @@ export class PageAgentCore extends EventTarget {
 	 */
 	#restoreActiveGoal() {
 		for (let i = this.history.length - 1; i >= 0; i--) {
-			const ev: any = this.history[i]
+			const ev = this.history[i]
 			if (ev.type === 'step') {
 				const g = ev.reflection?.active_goal
 				if (g && g.trim()) {
@@ -276,7 +301,7 @@ export class PageAgentCore extends EventTarget {
 				}
 			}
 		}
-		const firstUserMsg: any = this.history.find((e: any) => e.type === 'user_message')
+		const firstUserMsg = this.history.find((e) => e.type === 'user_message')
 		if (firstUserMsg) {
 			this.#activeGoal = firstUserMsg.content
 		}
@@ -290,14 +315,16 @@ export class PageAgentCore extends EventTarget {
 	 *
 	 * @returns 应用结果：success 时返回更新后的脚本；失败时返回错误详情
 	 */
-	applyPatches(patches: any) {
+	applyPatches(
+		patches: ScriptPatch[]
+	): { success: false; error: string } | { success: true; script: string } {
 		if (this.#currentScript === null) {
 			return {
 				success: false,
 				error: 'No currentScript to patch. Use execute_javascript to create a script first.',
 			}
 		}
-		let script: any = this.#currentScript
+		let script: string = this.#currentScript
 		for (let i = 0; i < patches.length; i++) {
 			const { search, replace } = patches[i]
 			const idx = script.indexOf(search)
@@ -341,7 +368,7 @@ currentScript length: ${this.#currentScript.length} chars`,
 		this.pageController.hideMask()
 		this.#abortController.abort()
 	}
-	async execute(task: any, options: any) {
+	async execute(task: string, options?: ExecuteOptions): Promise<ExecutionResult> {
 		if (this.disposed) throw new Error('PageAgent has been disposed. Create a new instance.')
 		if (!task) throw new Error('Task is required')
 		this.task = task
@@ -363,8 +390,8 @@ currentScript length: ${this.#currentScript.length} chars`,
 		this.#attachedScript = options?.attachedScript ?? null
 		this.#activeGoal = ''
 		this.#restoreActiveGoal()
-		const completedStepCount = this.history.filter((e: any) => e.type === 'step').length
-		const lastEvent: any = this.history[this.history.length - 1]
+		const completedStepCount = this.history.filter((e) => e.type === 'step').length
+		const lastEvent = this.history[this.history.length - 1] as HistoricalEvent | undefined
 		const alreadyPushed = lastEvent?.type === 'user_message' && lastEvent.content === task
 		if (alreadyPushed) {
 			if (typeof lastEvent.step !== 'number') {
@@ -380,7 +407,7 @@ currentScript length: ${this.#currentScript.length} chars`,
 		if (!this.#activeGoal.trim()) {
 			this.#activeGoal = task
 		}
-		this.#turnStepOffset = this.history.filter((e: any) => e.type === 'step').length
+		this.#turnStepOffset = this.history.filter((e) => e.type === 'step').length
 		this.#errorCounts = {
 			InvalidArguments: 0,
 			UnexpectedEnvironment: 0,
@@ -416,7 +443,7 @@ currentScript length: ${this.#currentScript.length} chars`,
 				await this.#handleObservations(step)
 				const userPromptText = await this.#assembleUserPrompt()
 				const userContent = this.#buildUserContent(userPromptText)
-				const messages = [
+				const messages: Message[] = [
 					{ role: 'system', content: this.#getSystemPrompt() },
 					{ role: 'user', content: userContent },
 				]
@@ -432,7 +459,7 @@ currentScript length: ${this.#currentScript.length} chars`,
 				const input = await parseAgentOutput(
 					completionResult.text,
 					this.tools,
-					async (context: any) => {
+					async (context) => {
 						const blockHint =
 							context.summary.errorType === 'unterminated_block'
 								? `
@@ -468,7 +495,7 @@ Rules:
    ...raw content, no escaping...
    @@@END id
 `
-						const retryMessages = [...messages, { role: 'user', content: repairPrompt }]
+						const retryMessages: Message[] = [...messages, { role: 'user', content: repairPrompt }]
 						const retry = await this.#llm.completeText(retryMessages, this.#abortController.signal)
 						completionResult.usage = retry.usage
 						completionResult.rawResponse = retry.rawResponse
@@ -522,13 +549,13 @@ Rules:
 					toolResult.success &&
 					this.#currentScript === null
 				) {
-					const script = toolInput.script
+					const script = toolInput.script as string
 					if (script.length > 200) {
 						this.#currentScript = script
 					}
 				}
 				if (actionName === 'wait') {
-					this.#states.totalWaitTime += toolInput?.seconds || 0
+					this.#states.totalWaitTime += (toolInput?.seconds as number | undefined) || 0
 				} else {
 					this.#states.totalWaitTime = 0
 				}
@@ -553,7 +580,7 @@ Rules:
 				if (input.active_goal && input.active_goal.trim()) {
 					this.#activeGoal = input.active_goal.trim()
 				}
-				let stepError
+				let stepError: StepEvent['error']
 				if (!toolResult.success) {
 					const errType = classifySoftFailure(output)
 					stepError = {
@@ -587,9 +614,13 @@ Rules:
 				console.groupEnd()
 				if (actionName === 'done' || toolResult.terminateTask) {
 					const success =
-						actionName === 'done' ? (action.input?.success ?? false) : toolResult.success
+						actionName === 'done'
+							? ((action.input?.success as boolean | undefined) ?? false)
+							: toolResult.success
 					const text =
-						actionName === 'done' ? action.input?.text || 'no text provided' : toolResult.message
+						actionName === 'done'
+							? (action.input?.text as string | undefined) || 'no text provided'
+							: toolResult.message
 					console.log(chalk.green.bold('Task completed'), success, text)
 					this.#onDone(success)
 					const execResult = {
@@ -600,9 +631,9 @@ Rules:
 					await onAfterTask?.(this, execResult)
 					return execResult
 				}
-			} catch (error: any) {
+			} catch (error) {
 				console.groupEnd()
-				const isAbortError = error?.rawError?.name === 'AbortError'
+				const isAbortError = (error as MaybeInvokeError)?.rawError?.name === 'AbortError'
 				console.error('Task failed', error)
 				const errorMessage = isAbortError ? 'Task stopped' : String(error)
 				this.#emitActivity({ type: 'error', message: errorMessage })
@@ -676,7 +707,7 @@ Rules:
 		if (instructions?.getPageInstructions && url) {
 			try {
 				pageInstructions = instructions.getPageInstructions(url)?.trim()
-			} catch (error: any) {
+			} catch (error) {
 				console.error(
 					chalk.red('[PageAgent] Failed to execute getPageInstructions callback:'),
 					error
@@ -712,7 +743,7 @@ ${llmsTxt}
 	 * @todo loop detection
 	 * @todo console error
 	 */
-	async #handleObservations(step: any) {
+	async #handleObservations(step: number) {
 		if (this.#states.totalWaitTime >= 3) {
 			this.pushObservation(
 				`You have waited ${this.#states.totalWaitTime} seconds accumulatively. DO NOT wait any longer unless you have a good reason.`
@@ -753,7 +784,7 @@ ${llmsTxt}
 	static #TRIVIAL_RESULT_PATTERN =
 		/^✅ Executed JavaScript\. Result: (?:"(?:ok|undefined|true|false|null|'ok')"|undefined)$/
 	async #assembleUserPrompt() {
-		const browserState: any = this.#states.browserState
+		const browserState = this.#states.browserState!
 		let prompt = ''
 		prompt += await this.#getInstructions()
 		const useDigest = this.config.scriptInPromptStrategy === 'digest' && this.#scriptInjectedFull
@@ -770,8 +801,8 @@ ${llmsTxt}
 				prompt += '</attached_script>\n\n'
 			}
 		}
-		const stepCount = this.history.filter((e: any) => e.type === 'step').length
-		const userMsgs: any = this.history.filter((e: any) => e.type === 'user_message')
+		const stepCount = this.history.filter((e) => e.type === 'step').length
+		const userMsgs = this.history.filter((e) => e.type === 'user_message')
 		const latestUserMessage = userMsgs.length ? userMsgs[userMsgs.length - 1].content : this.task
 		prompt += '<active_goal>\n'
 		prompt += `${this.#activeGoal || this.task}
@@ -779,7 +810,7 @@ ${llmsTxt}
 		prompt += '</active_goal>\n\n'
 		prompt += '<user_messages>\n'
 		for (let i = 0; i < userMsgs.length; i++) {
-			const um: any = userMsgs[i]
+			const um = userMsgs[i]
 			const stepTag = typeof um.step === 'number' ? `[step ${um.step}] ` : ''
 			const isLatest = i === userMsgs.length - 1
 			const content = isLatest ? um.content : this.#truncateCodeBlocks(um.content)
@@ -910,11 +941,11 @@ ${llmsTxt}
 	 * Build user message content, attaching pending screenshots as multimodal image parts.
 	 * Returns plain string when no screenshots are pending (most common path).
 	 */
-	#buildUserContent(textPrompt: any) {
+	#buildUserContent(textPrompt: string): string | MessageContentPart[] {
 		if (this.#pendingScreenshots.length === 0) {
 			return textPrompt
 		}
-		const parts: any[] = [{ type: 'text', text: textPrompt }]
+		const parts: MessageContentPart[] = [{ type: 'text', text: textPrompt }]
 		for (const dataUrl of this.#pendingScreenshots) {
 			parts.push({
 				type: 'image_url',
@@ -932,7 +963,7 @@ ${llmsTxt}
 	async #maybeSummarize() {
 		if (this.#summarizationFailures >= SUMMARIZATION_MAX_FAILURES) return
 		if (this.#summarizationInFlight) return
-		const allSteps = this.history.filter((e: any) => e.type === 'step')
+		const allSteps = this.history.filter((e) => e.type === 'step')
 		const stepCount = allSteps.length
 		const windowSize = this.config.historyWindowSize
 		const outsideWindow = stepCount - windowSize
@@ -948,7 +979,7 @@ ${llmsTxt}
 			}
 			this.#lastSummarizedAtStepCount = outsideWindow
 			this.#summarizationFailures = 0
-		} catch (err: any) {
+		} catch (err) {
 			this.#summarizationFailures++
 			console.warn(
 				`[summarization] failed (${this.#summarizationFailures}/${SUMMARIZATION_MAX_FAILURES})`,
@@ -964,9 +995,9 @@ ${llmsTxt}
 	 *   - 主任务 abort 时连带杀掉摘要
 	 *   - 摘要的 retry/error 事件污染主任务 history
 	 */
-	async #runSummarization(steps: any) {
+	async #runSummarization(steps: StepEvent[]) {
 		const stepsJson = JSON.stringify(
-			steps.map((s: any) => ({
+			steps.map((s) => ({
 				step: s.stepIndex,
 				reflection: s.reflection,
 				action: {
@@ -1002,8 +1033,8 @@ ${llmsTxt}
 	 * 这些代码在窗口外的历史中已不需要完整内容，替换后可大幅节省 token。
 	 * 占位符格式：[code omitted, ~N chars]，保留字符数供 LLM 了解规模。
 	 */
-	#truncateCodeBlocks(text: any) {
-		return text.replaceAll(/```[\s\S]*?```/g, (match: any) => {
+	#truncateCodeBlocks(text: string) {
+		return text.replaceAll(/```[\s\S]*?```/g, (match) => {
 			return `[code omitted, ~${match.length} chars]`
 		})
 	}

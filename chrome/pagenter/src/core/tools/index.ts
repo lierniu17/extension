@@ -1,12 +1,12 @@
-// TODO(types)
 import * as z from 'zod/v4'
 
+import type { PageAgentTool } from '../types'
 import { waitFor } from '../utils'
 
-export function tool(options: any) {
+export function tool<S extends z.ZodType>(options: PageAgentTool<S>): PageAgentTool<S> {
 	return options
 }
-export const tools = new Map()
+export const tools = new Map<string, PageAgentTool>()
 tools.set(
 	'done',
 	tool({
@@ -16,7 +16,7 @@ tools.set(
 			text: z.string().describe('Final message to the user (concise by default)'),
 			success: z.boolean().default(true).describe('true = task succeeded, false = stuck or failed'),
 		}),
-		execute: async function (input: any) {
+		execute: async function (input) {
 			return { success: true, message: 'Task completed' }
 		},
 	})
@@ -29,7 +29,7 @@ tools.set(
 		inputSchema: z.object({
 			seconds: z.number().min(1).max(10).default(1).describe('How many seconds to wait'),
 		}),
-		execute: async function (input: any) {
+		execute: async function (input) {
 			const lastTimeUpdate = await this.pageController.getLastUpdateTime()
 			const actualWaitTime = Math.max(0, input.seconds - (Date.now() - lastTimeUpdate) / 1e3)
 			console.log(`actualWaitTime: ${actualWaitTime} seconds`)
@@ -49,7 +49,7 @@ tools.set(
 		inputSchema: z.object({
 			question: z.string().describe('Question shown to the user'),
 		}),
-		execute: async function (input: any) {
+		execute: async function (input) {
 			if (!this.onAskUser) {
 				throw new Error('ask_user tool requires onAskUser callback to be set')
 			}
@@ -94,7 +94,7 @@ tools.set(
 				.min(1)
 				.describe('Hint label shown in brackets next to the element (e.g. "sa", "df")'),
 		}),
-		execute: async function (input: any) {
+		execute: async function (input) {
 			return this.pageController.clickElement(input.hint)
 		},
 	})
@@ -108,7 +108,7 @@ tools.set(
 			hint: z.string().min(1).describe('Hint label of the input field'),
 			text: z.string().describe('Text to type into the field'),
 		}),
-		execute: async function (input: any) {
+		execute: async function (input) {
 			return this.pageController.inputText(input.hint, input.text)
 		},
 	})
@@ -122,7 +122,7 @@ tools.set(
 			hint: z.string().min(1).describe('Hint label of the <select> element'),
 			text: z.string().describe('Exact visible text of the option to choose'),
 		}),
-		execute: async function (input: any) {
+		execute: async function (input) {
 			return this.pageController.selectOption(input.hint, input.text)
 		},
 	})
@@ -153,7 +153,7 @@ tools.set(
 				.optional()
 				.describe('Hint of a scrollable container. Omit to scroll the page'),
 		}),
-		execute: async function (input: any) {
+		execute: async function (input) {
 			return this.pageController.scroll({
 				...input,
 				numPages: input.num_pages,
@@ -175,7 +175,7 @@ tools.set(
 				.optional()
 				.describe('Hint of the scrollable container. Omit to scroll the page'),
 		}),
-		execute: async function (input: any) {
+		execute: async function (input) {
 			return this.pageController.scrollHorizontally(input)
 		},
 	})
@@ -190,7 +190,7 @@ tools.set(
 				.string()
 				.describe('JS source to execute; the last expression is returned as the result'),
 		}),
-		execute: async function (input: any) {
+		execute: async function (input) {
 			return this.pageController.executeJavascript(input.script)
 		},
 	})
@@ -210,7 +210,7 @@ tools.set(
 				)
 				.describe('Ordered patches applied sequentially'),
 		}),
-		execute: async function (input: any) {
+		execute: async function (input) {
 			const result = this.applyPatches(input.patches)
 			if (!result.success) {
 				return { success: false, message: `❌ Patch failed: ${result.error}` }

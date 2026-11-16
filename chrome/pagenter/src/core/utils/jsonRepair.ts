@@ -1,11 +1,10 @@
-// TODO(types)
 // Lenient JSON repair for model output: escape raw control characters inside
 // strings and drop trailing commas.
 
-export function repairJsonText(text: any) {
+export function repairJsonText(text: string) {
 	return stripTrailingCommas(escapeControlCharsInStrings(text))
 }
-export function escapeControlCharsInStrings(text: any) {
+export function escapeControlCharsInStrings(text: string) {
 	let out = ''
 	let inString = false
 	let escape = false
@@ -43,7 +42,7 @@ export function escapeControlCharsInStrings(text: any) {
 	}
 	return out
 }
-export function stripTrailingCommas(text: any) {
+export function stripTrailingCommas(text: string) {
 	let out = ''
 	let inString = false
 	let escape = false
