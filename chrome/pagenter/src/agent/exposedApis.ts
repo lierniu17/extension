@@ -1,5 +1,6 @@
-// TODO(types)
 // Calls the APIs that Sniff exposed for a site and the upstream MCP servers.
+import type { SniffApi, SniffProject, SniffSpec, UpstreamMcpServer } from '@/lib/dbSchema'
+import type { ApiCallPayload, ApiListPayload, McpCallPayload } from '@/lib/messages'
 import {
 	getLatestSpecByApi,
 	getUpstreamMcpServerByName,
@@ -8,7 +9,7 @@ import {
 	listUpstreamMcpServers,
 } from '@/lib/sniff/db'
 
-export function extractOrigin(url: any) {
+export function extractOrigin(url: string | null | undefined) {
 	if (!url) return null
 	try {
 		return new URL(url).origin
@@ -16,7 +17,7 @@ export function extractOrigin(url: any) {
 		return null
 	}
 }
-export function originMatches(origin: any, patterns: any) {
+export function originMatches(origin: string, patterns: string[]) {
 	if (patterns.length === 0) {
 		console.warn('[Pagenter Bridge] project has empty originPatterns, allowing all origins')
 		return true
@@ -27,14 +28,14 @@ export function originMatches(origin: any, patterns: any) {
 	}
 	return false
 }
-export async function findProjectByOrigin(origin: any) {
+export async function findProjectByOrigin(origin: string) {
 	const all = await listProjects()
 	for (const p of all) {
 		if (originMatches(origin, p.originPatterns)) return p
 	}
 	return null
 }
-export async function hasExposedApisForOrigin(url: any) {
+export async function hasExposedApisForOrigin(url: string | undefined) {
 	const origin = extractOrigin(url)
 	if (!origin) return false
 	const project = await findProjectByOrigin(origin)
@@ -49,7 +50,10 @@ export async function listEnabledMcpServers() {
 		.map((s) => ({ name: s.name, tools: s.allowedTools }))
 }
 /** Page bridge `listApis`: the exposed APIs of the project matching the tab's origin. */
-export async function handleApiList(sender: chrome.runtime.MessageSender, payload: any) {
+export async function handleApiList(
+	sender: chrome.runtime.MessageSender,
+	payload: ApiListPayload
+) {
 	const origin = extractOrigin(sender.tab?.url)
 	if (!origin) return { error: 'No tab origin available' }
 	const project = payload.projectId
@@ -83,14 +87,21 @@ export async function handleApiList(sender: chrome.runtime.MessageSender, payloa
  * with the user's cookies (`credentials: 'include'`).
  * Security note (spec 补充说明): restored as-is, the only check is the origin lookup.
  */
-export async function handleApiCall(sender: chrome.runtime.MessageSender, payload: any) {
+export async function handleApiCall(
+	sender: chrome.runtime.MessageSender,
+	payload: ApiCallPayload
+) {
 	const origin = extractOrigin(sender.tab?.url)
 	if (!origin) return { error: 'No tab origin available' }
 	const project = await findProjectByOrigin(origin)
 	if (!project) return { error: 'No matching project for this origin' }
 	return callApiByProjectAndTool(project.id, payload.toolName, payload.args ?? {})
 }
-export async function callApiByProjectAndTool(projectId: any, toolName: any, args: any) {
+export async function callApiByProjectAndTool(
+	projectId: string,
+	toolName: string,
+	args: Record<string, unknown>
+) {
 	const project = await listProjects().then((ps) => ps.find((p) => p.id === projectId) ?? null)
 	if (!project) return { error: `Project ${projectId} not found` }
 	const apis = await listApisByProject(project.id)
@@ -106,7 +117,7 @@ export async function callApiByProjectAndTool(projectId: any, toolName: any, arg
 			credentials: 'include',
 		})
 		const text = await res.text()
-		let parsed = text
+		let parsed: unknown = text
 		try {
 			parsed = JSON.parse(text)
 		} catch {}
@@ -117,11 +128,11 @@ export async function callApiByProjectAndTool(projectId: any, toolName: any, arg
 				body: parsed,
 			},
 		}
-	} catch (err: any) {
+	} catch (err) {
 		return { error: err instanceof Error ? err.message : String(err) }
 	}
 }
-function stringifyScalar(v: any) {
+function stringifyScalar(v: unknown) {
 	if (v === null || v === void 0) return ''
 	if (typeof v === 'object') return JSON.stringify(v)
 	if (typeof v === 'string') return v
@@ -129,9 +140,9 @@ function stringifyScalar(v: any) {
 	if (typeof v === 'boolean') return v ? 'true' : 'false'
 	return JSON.stringify(v) ?? ''
 }
-function fillPath(pattern: any, args: any) {
-	const consumed = new Set()
-	const pathFilled = pattern.replaceAll(/:(\w+)/g, (_: any, name: any) => {
+function fillPath(pattern: string, args: Record<string, unknown>) {
+	const consumed = new Set<string>()
+	const pathFilled = pattern.replaceAll(/:(\w+)/g, (_: string, name: string) => {
 		const v = args[name]
 		if (v === void 0 || v === null) return `:${name}`
 		consumed.add(name)
@@ -139,7 +150,7 @@ function fillPath(pattern: any, args: any) {
 	})
 	return { pathFilled, consumed }
 }
-function appendQuery(url: any, rest: any) {
+function appendQuery(url: string, rest: Record<string, unknown>) {
 	const qs = new URLSearchParams()
 	for (const [k, v] of Object.entries(rest)) {
 		if (v === null || v === void 0) continue
@@ -149,17 +160,22 @@ function appendQuery(url: any, rest: any) {
 	if (!q) return url
 	return url + (url.includes('?') ? '&' : '?') + q
 }
-function buildRequest(api: any, _spec: any, project: any, args: any) {
+function buildRequest(
+	api: SniffApi,
+	_spec: SniffSpec | null,
+	project: SniffProject,
+	args: Record<string, unknown>
+) {
 	const base = project.originPatterns[0] ?? ''
 	const { pathFilled, consumed } = fillPath(api.urlPattern, args)
-	const rest: any = {}
+	const rest: Record<string, unknown> = {}
 	for (const [k, v] of Object.entries(args)) {
 		if (!consumed.has(k)) rest[k] = v
 	}
 	const method = api.method.toUpperCase()
 	let url = base.replace(/\/$/, '') + (pathFilled.startsWith('/') ? pathFilled : '/' + pathFilled)
-	let body: any = null
-	const headers: any = { Accept: 'application/json' }
+	let body: string | null = null
+	const headers: Record<string, string> = { Accept: 'application/json' }
 	if (method === 'GET' || method === 'HEAD') {
 		url = appendQuery(url, rest)
 	} else if (Object.keys(rest).length > 0) {
@@ -168,7 +184,7 @@ function buildRequest(api: any, _spec: any, project: any, args: any) {
 	}
 	return { url, method, body, headers }
 }
-export async function callUpstreamMcpByName(serverName: any, toolName: any, args: any) {
+export async function callUpstreamMcpByName(serverName: string, toolName: string, args: unknown) {
 	const server = await getUpstreamMcpServerByName(serverName)
 	if (!server) return { error: `Upstream MCP server "${serverName}" not configured` }
 	if (!server.enabled) return { error: `Upstream MCP server "${serverName}" is disabled` }
@@ -181,15 +197,18 @@ export async function callUpstreamMcpByName(serverName: any, toolName: any, args
 		const { callUpstreamTool } = await import('@/lib/upstreamClient')
 		const result = await callUpstreamTool(server, toolName, args)
 		return { data: result }
-	} catch (err: any) {
+	} catch (err) {
 		return { error: err instanceof Error ? err.message : String(err) }
 	}
 }
 /** Page bridge `mcp`: forwards to a configured upstream MCP server. */
-export async function handleMcpCall(_sender: chrome.runtime.MessageSender, payload: any) {
+export async function handleMcpCall(
+	_sender: chrome.runtime.MessageSender,
+	payload: McpCallPayload
+) {
 	return callUpstreamMcpByName(payload.serverName, payload.toolName, payload.args ?? {})
 }
-function matchAllowedTools(server: any, tool: any) {
+function matchAllowedTools(server: UpstreamMcpServer, tool: string) {
 	const list = server.allowedTools ?? []
 	if (list.includes('*')) return true
 	return list.includes(tool)

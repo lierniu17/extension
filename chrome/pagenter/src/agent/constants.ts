@@ -1,11 +1,29 @@
-// TODO(types)
+import type { LLMConfig } from '@/llms'
+
+/** The `llmConfig` entry of chrome.storage.local, as the settings page saves it. */
+export type StoredLlmConfig = Partial<LLMConfig>
+
+/** The `advancedConfig` entry of chrome.storage.local (settings page, advanced section). */
+export interface StoredAdvancedConfig {
+	maxSteps?: number
+	systemInstruction?: string
+	experimentalLlmsTxt?: boolean
+	experimentalIncludeAllTabs?: boolean
+	disableNamedToolChoice?: boolean
+	scriptInPromptStrategy?: string
+	/** Delay before an auto TipScript runs. */
+	autoExecDelaySec?: number
+}
 
 export const EMPTY_LLM_CONFIG = { baseURL: '', model: '', apiKey: '' }
 export function getDefaultLlmConfig() {
 	return EMPTY_LLM_CONFIG
 }
-export function resolveLlmConfig(stored: any) {
-	const llmConfig = stored
+/** `stored` is the raw `llmConfig` storage entry; it is trusted to be what the settings page wrote. */
+type RawStoredLlmConfig = unknown
+
+export function resolveLlmConfig(stored: RawStoredLlmConfig): StoredLlmConfig {
+	const llmConfig = stored as StoredLlmConfig | null | undefined
 	if (llmConfig?.baseURL || llmConfig?.model || llmConfig?.apiKey) return llmConfig
 	return getDefaultLlmConfig()
 }

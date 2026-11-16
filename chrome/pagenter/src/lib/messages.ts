@@ -6,6 +6,8 @@
 // content scripts carry data from web pages and are not trusted: handlers
 // still validate the fields they rely on.
 
+import type { AgentActivity, AgentStatus, HistoricalEvent } from '@/core/types'
+
 // ---- CDP proxy (extension pages → service worker) ----
 
 /** Extension pages cannot attach the debugger themselves; the service worker does it for them. */
@@ -99,3 +101,95 @@ export type TabEventMessage =
 			action: 'updated'
 			payload: { tabId: number; changeInfo: chrome.tabs.OnUpdatedInfo; tab: chrome.tabs.Tab }
 	  }
+
+// ---- page bridge (web page → content script → service worker) ----
+//
+// `window.__pagenter` (entrypoints/pagenter-bridge.ts, MAIN world) posts
+// `${channel}_REQUEST` window messages; the content script relays them to the
+// service worker as `{ type: channel, payload }` and posts the answer back as
+// `${channel}_RESPONSE`. Any script on the page can post these requests, so
+// every payload below is untrusted input.
+
+export type BridgeChannel =
+	| 'PAGENTER_API_CALL'
+	| 'PAGENTER_MCP_CALL'
+	| 'PAGENTER_API_LIST'
+	| 'PAGENTER_LLM_CALL'
+	| 'PAGENTER_KV_SET'
+	| 'PAGENTER_KV_GET'
+	| 'PAGENTER_KV_LIST'
+	| 'PAGENTER_KV_DELETE'
+
+export type KvChannel = Extract<BridgeChannel, `PAGENTER_KV_${string}`>
+
+/** `__pagenter.callApi(toolName, args)`: call an API Sniff exposed for this origin. */
+export interface ApiCallPayload {
+	toolName: string
+	args?: Record<string, unknown>
+}
+
+/** `__pagenter.mcp(serverName, toolName, args)`: call a tool of an upstream MCP server. */
+export interface McpCallPayload {
+	serverName: string
+	toolName: string
+	args?: unknown
+}
+
+/** `__pagenter.listApis(projectId?)`. */
+export interface ApiListPayload {
+	projectId?: string
+}
+
+/** `__pagenter.llm(options)`: one chat completion with the user's model. */
+export interface LlmCallPayload {
+	messages: unknown[]
+	temperature?: number
+	/** `'json'` asks for `response_format: { type: 'json_object' }`. */
+	response_format?: string
+	[key: string]: unknown
+}
+
+/** `__pagenter.kv.*`: `key` for set / get / delete, `value` for set. */
+export interface KvPayload {
+	key?: string
+	value?: unknown
+}
+
+export type BridgeMessage =
+	| { type: 'PAGENTER_API_CALL'; payload: ApiCallPayload }
+	| { type: 'PAGENTER_MCP_CALL'; payload: McpCallPayload }
+	| { type: 'PAGENTER_API_LIST'; payload: ApiListPayload }
+	| { type: 'PAGENTER_LLM_CALL'; payload: LlmCallPayload }
+	| { type: KvChannel; payload: KvPayload }
+
+/** What the service worker answers on a bridge channel. */
+export type BridgeResponse<T = unknown> = { data: T; error?: undefined } | { error: string; data?: undefined }
+
+/** The window message the content script posts back to the page. */
+export interface BridgeWindowResponse {
+	channel: string
+	id: number
+	payload?: unknown
+	error?: string
+}
+
+// ---- agent session sync (side panel ↔ other extension pages) ----
+
+/** The page running the agent ("leader") broadcasts its session so other open panels mirror it. */
+export interface AgentSessionSyncMessage {
+	type: 'AGENT_SESSION_SYNC'
+	/** Sender's useAgent instance; receivers ignore their own broadcasts. */
+	instanceId: string
+	sessionId: string
+	task: string
+	history: HistoricalEvent[]
+	status: AgentStatus
+	activity: AgentActivity | null
+}
+
+/** A mirroring panel asks the leader to stop its task. */
+export interface AgentStopMessage {
+	type: 'AGENT_STOP'
+	instanceId: string
+	sessionId: string | null
+}

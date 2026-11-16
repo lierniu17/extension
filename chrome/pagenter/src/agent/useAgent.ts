@@ -1,34 +1,61 @@
-// TODO(types)
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import type { AgentStatus } from '@/core/types'
+import type {
+	AgentActivity,
+	AgentStatus,
+	AttachedScript,
+	ExecuteOptions,
+	HistoricalEvent,
+	SupportedLanguage,
+} from '@/core/types'
 import { getSession, saveSession, saveTipScript, updateSession } from '@/lib/db'
+import type { AgentSessionSyncMessage, AgentStopMessage } from '@/lib/messages'
 
-import { MultiPageAgent } from './MultiPageAgent'
-import { ScriptModeAgent } from './ScriptModeAgent'
-import { DEFAULT_SYSTEM_INSTRUCTION, resolveLlmConfig } from './constants'
+import { MultiPageAgent, type MultiPageAgentConfig } from './MultiPageAgent'
+import { ScriptModeAgent, type TipScriptProposal } from './ScriptModeAgent'
+import {
+	DEFAULT_SYSTEM_INSTRUCTION,
+	resolveLlmConfig,
+	type StoredAdvancedConfig,
+	type StoredLlmConfig,
+} from './constants'
+
+/** Side panel mode: step-by-step agent, Script mode agent, or the Sniff view (no agent). */
+export type AgentMode = 'normal' | 'script' | 'sniff'
+
+/** Model settings, advanced settings and language, merged as the side panel uses them. */
+export type AgentUiConfig = StoredLlmConfig & StoredAdvancedConfig & { language?: SupportedLanguage }
+
+/** What the leader broadcasts; mirrored by the other panels. */
+interface SyncSnapshot {
+	sessionId: string | null
+	currentTask: string
+	history: HistoricalEvent[]
+	status: AgentStatus
+	activity: AgentActivity | null
+}
 
 export const AGENT_SESSION_SYNC = 'AGENT_SESSION_SYNC'
 
-export function postAgentSessionSync(payload: any) {
+export function postAgentSessionSync(payload: Omit<AgentSessionSyncMessage, 'type'>) {
 	chrome.runtime.sendMessage({ type: AGENT_SESSION_SYNC, ...payload }).catch(() => {})
 }
 
 export const AGENT_STOP = 'AGENT_STOP'
 
-export function postAgentStop(payload: any) {
+export function postAgentStop(payload: Omit<AgentStopMessage, 'type'>) {
 	chrome.runtime.sendMessage({ type: AGENT_STOP, ...payload }).catch(() => {})
 }
 
 export function useAgent() {
-	const agentRef = useRef<any>(null)
+	const agentRef = useRef<MultiPageAgent | ScriptModeAgent | null>(null)
 	const [status, setStatus] = useState<AgentStatus>('idle')
-	const [history, setHistory] = useState<any>([])
-	const [activity, setActivity] = useState<any>(null)
+	const [history, setHistory] = useState<HistoricalEvent[]>([])
+	const [activity, setActivity] = useState<AgentActivity | null>(null)
 	const [currentTask, setCurrentTask] = useState('')
-	const [sessionId, setSessionId] = useState<any>(null)
-	const [config, setConfig] = useState<any>(null)
-	const [mode, setMode] = useState<any>('normal')
+	const [sessionId, setSessionId] = useState<string | null>(null)
+	const [config, setConfig] = useState<AgentUiConfig | null>(null)
+	const [mode, setMode] = useState<AgentMode>('normal')
 	const modelInfo = config?.model
 		? {
 				model: config.model,
@@ -36,21 +63,21 @@ export function useAgent() {
 				contextLength: config.contextLength,
 			}
 		: null
-	const [sessionHistory, setSessionHistory] = useState<any>([])
-	const sessionHistoryRef = useRef<any>([])
+	const [sessionHistory, setSessionHistory] = useState<HistoricalEvent[]>([])
+	const sessionHistoryRef = useRef<HistoricalEvent[]>([])
 	useEffect(() => {
 		sessionHistoryRef.current = sessionHistory
 	}, [sessionHistory])
-	const [tipScriptProposal, setTipScriptProposal] = useState<any>(null)
-	const [attachedScript, setAttachedScript] = useState<any>(null)
-	const attachedScriptRef = useRef<any>(null)
+	const [tipScriptProposal, setTipScriptProposal] = useState<TipScriptProposal | null>(null)
+	const [attachedScript, setAttachedScript] = useState<AttachedScript | null>(null)
+	const attachedScriptRef = useRef<AttachedScript | null>(null)
 	useEffect(() => {
 		attachedScriptRef.current = attachedScript
 	}, [attachedScript])
-	const saveTimerRef = useRef<any>(null)
+	const saveTimerRef = useRef<number | null>(null)
 	const instanceIdRef = useRef(crypto.randomUUID())
 	const isLeaderRef = useRef(false)
-	const syncSnapshotRef = useRef({
+	const syncSnapshotRef = useRef<SyncSnapshot>({
 		sessionId: null,
 		currentTask: '',
 		history: [],
@@ -60,7 +87,7 @@ export function useAgent() {
 	useEffect(() => {
 		syncSnapshotRef.current = { sessionId, currentTask, history, status, activity }
 	}, [sessionId, currentTask, history, status, activity])
-	const broadcastSessionSync = useCallback((overrides: any) => {
+	const broadcastSessionSync = useCallback((overrides: Partial<SyncSnapshot>) => {
 		if (!isLeaderRef.current) return
 		const s = { ...syncSnapshotRef.current, ...overrides }
 		if (!s.sessionId) return
@@ -74,7 +101,7 @@ export function useAgent() {
 		})
 	}, [])
 	const broadcastRef = useRef(broadcastSessionSync)
-	const scheduleIncrementalSave = useCallback((sid: any, task: any, hist: any, st: any) => {
+	const scheduleIncrementalSave = useCallback((sid: string, task: string, hist: HistoricalEvent[], st: AgentStatus) => {
 		if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current)
 		saveTimerRef.current = window.setTimeout(() => {
 			updateSession(sid, { task, history: hist, status: st }).catch((err) =>
@@ -98,7 +125,7 @@ export function useAgent() {
 		})
 	}, [])
 	useEffect(() => {
-		const onMessage = (msg: any) => {
+		const onMessage = (msg: AgentSessionSyncMessage | undefined) => {
 			if (msg?.type !== AGENT_SESSION_SYNC) return
 			if (msg.instanceId === instanceIdRef.current) return
 			if (isLeaderRef.current) return
@@ -116,7 +143,7 @@ export function useAgent() {
 		return () => chrome.runtime.onMessage.removeListener(onMessage)
 	}, [])
 	useEffect(() => {
-		const onStop = (msg: any) => {
+		const onStop = (msg: AgentStopMessage | undefined) => {
 			if (msg?.type !== AGENT_STOP) return
 			if (msg.instanceId === instanceIdRef.current) return
 			if (!isLeaderRef.current) return
@@ -129,8 +156,8 @@ export function useAgent() {
 	useEffect(() => {
 		chrome.storage.local.get(['llmConfig', 'language', 'advancedConfig']).then((result) => {
 			const llmConfig = resolveLlmConfig(result.llmConfig)
-			const language = result.language || 'zh-CN'
-			const stored = result.advancedConfig ?? {}
+			const language = (result.language as SupportedLanguage | undefined) || 'zh-CN'
+			const stored = (result.advancedConfig as StoredAdvancedConfig | undefined) ?? {}
 			const advancedConfig = {
 				systemInstruction: DEFAULT_SYSTEM_INSTRUCTION,
 				...stored,
@@ -153,7 +180,7 @@ export function useAgent() {
 			...agentConfig,
 			instructions: systemInstruction ? { system: systemInstruction } : void 0,
 		}
-		const agent = mode === 'script' ? new ScriptModeAgent(agentOpts) : new MultiPageAgent(agentOpts)
+		const agent = mode === 'script' ? new ScriptModeAgent(agentOpts as MultiPageAgentConfig) : new MultiPageAgent(agentOpts as MultiPageAgentConfig)
 		agentRef.current = agent
 		const handleStatusChange = () => {
 			const newStatus = agent.status as AgentStatus
@@ -173,13 +200,13 @@ export function useAgent() {
 			setHistory(nextHistory)
 			broadcastRef.current({ history: nextHistory })
 		}
-		const handleActivity = (e: any) => {
-			const newActivity = e.detail
+		const handleActivity = (e: Event) => {
+			const newActivity = (e as CustomEvent<AgentActivity>).detail
 			setActivity(newActivity)
 			broadcastRef.current({ activity: newActivity })
 		}
-		const handleProposal = (e: any) => {
-			setTipScriptProposal(e.detail)
+		const handleProposal = (e: Event) => {
+			setTipScriptProposal((e as CustomEvent<TipScriptProposal>).detail)
 		}
 		agent.addEventListener('statuschange', handleStatusChange)
 		agent.addEventListener('historychange', handleHistoryChange)
@@ -204,14 +231,14 @@ export function useAgent() {
 		}
 	}, [status])
 	const execute = useCallback(
-		async (task: any) => {
+		async (task: string) => {
 			const agent = agentRef.current
 			console.log('[useAgent] start executing task:', task)
 			if (!agent) throw new Error('Agent not initialized')
 			isLeaderRef.current = true
 			setCurrentTask(task)
 			setStatus('running')
-			const userMsg = { type: 'user_message', content: task }
+			const userMsg: HistoricalEvent = { type: 'user_message', content: task }
 			const initialHistory = [...sessionHistoryRef.current, userMsg]
 			setSessionHistory(initialHistory)
 			setHistory(initialHistory)
@@ -231,7 +258,7 @@ export function useAgent() {
 				status: 'running',
 				activity: null,
 			})
-			const execOpts: any = {
+			const execOpts: ExecuteOptions = {
 				initialHistory,
 			}
 			if (attachedScriptRef.current) {
@@ -271,13 +298,13 @@ export function useAgent() {
 		setSessionId(null)
 		setAttachedScript(null)
 	}, [])
-	const addPickedElement = useCallback((selector: any) => {
+	const addPickedElement = useCallback((selector: string) => {
 		const agent = agentRef.current
 		if (agent && 'addPickedSelector' in agent) {
 			agent.addPickedSelector(selector)
 		}
 	}, [])
-	const confirmTipScript = useCallback(async (edited: any) => {
+	const confirmTipScript = useCallback(async (edited: TipScriptProposal) => {
 		await saveTipScript({
 			name: edited.name,
 			description: edited.description,
@@ -288,7 +315,7 @@ export function useAgent() {
 		})
 		setTipScriptProposal(null)
 	}, [])
-	const openTipScriptProposal = useCallback((proposal: any) => {
+	const openTipScriptProposal = useCallback((proposal: TipScriptProposal) => {
 		setTipScriptProposal(proposal)
 	}, [])
 	const dismissTipScript = useCallback(() => {
@@ -305,7 +332,7 @@ export function useAgent() {
 			scriptInPromptStrategy,
 			autoExecDelaySec,
 			...llmConfig
-		}: any) => {
+		}: AgentUiConfig) => {
 			await chrome.storage.local.set({ llmConfig })
 			if (language) {
 				await chrome.storage.local.set({ language: language })

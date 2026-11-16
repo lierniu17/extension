@@ -1,9 +1,11 @@
-// TODO(types)
 import * as z from 'zod/v4'
 
+import type { PageAgentTool } from '@/core/types'
 import { cdpEval, wrapScriptForEval } from '@/lib/cdp'
 
-export function createDebuggerTools(tabsController: any) {
+import type { TabsController } from './TabsController'
+
+export function createDebuggerTools(tabsController: TabsController): Record<string, PageAgentTool> {
 	return {
 		execute_javascript: {
 			description:
@@ -15,7 +17,7 @@ export function createDebuggerTools(tabsController: any) {
 						'JS source treated as an async function body — use top-level `return X` to send a value back; top-level `await` is supported'
 					),
 			}),
-			execute: async (input: any) => {
+			execute: async (input: { script: string }) => {
 				const { script } = input
 				const tabId = tabsController.currentTabId
 				if (!tabId) {
@@ -37,7 +39,7 @@ export function createDebuggerTools(tabsController: any) {
 						success: false,
 						message: `❌ Error executing JavaScript: ${result.error}`,
 					}
-				} catch (error: any) {
+				} catch (error) {
 					return {
 						success: false,
 						message: `❌ Error executing JavaScript: ${error instanceof Error ? error.message : String(error)}`,
