@@ -64,6 +64,15 @@ export function normalizeName(name: string): string {
 	return name.replace(/^(.+?)\$[0-9A-Za-z_]+$/, '$1').replace(/^(.*[^\d$])\d+$/, '$1')
 }
 
+// Rollup's namespace object for a dynamically imported module, compared with
+// whitespace removed: const X = Object.freeze(Object.defineProperty({ __proto__: null, ... }, Symbol.toStringTag, { value: "Module" }))
+const NAMESPACE_OBJECT =
+	/^const[\w$]+=(\/\*@__PURE__\*\/)?Object\.freeze\((\/\*@__PURE__\*\/)?Object\.defineProperty\(\{__proto__:null,.*Symbol\.toStringTag,\{value:"Module"\},?\),?\);?$/s
+
+export function isNamespaceObjectCode(code: string): boolean {
+	return NAMESPACE_OBJECT.test(code.replace(/\s+/g, ''))
+}
+
 export async function formatSource(code: string): Promise<string> {
 	return prettier.format(code, { parser: 'babel', printWidth: 100 })
 }
@@ -326,7 +335,7 @@ export async function analyzeFiles(
 		const fileOrigins = origins[f.path] ?? {}
 		for (const u of f.units) {
 			const from = firstTokenAt(tokens, u.node.start)
-			const key = keyOf(tokens, from, u.node.end, rename)
+			const key = asClassDeclaration(keyOf(tokens, from, u.node.end, rename))
 			decls.push({
 				file: f.file,
 				path: f.path,
@@ -339,6 +348,18 @@ export async function analyzeFiles(
 		}
 	}
 	return decls
+}
+
+/**
+ * `let X$1 = class X { ... };` is how rollup prints a class it had to rename
+ * (the expression keeps `X.name`); it is the same source as `class X { ... }`.
+ * Which of two same-named classes gets renamed depends on what else is in the
+ * chunk, so the key uses the declaration form. Only applies when the binding
+ * and the class name are the same identifier after rename normalization.
+ */
+export function asClassDeclaration(key: string): string {
+	const m = /^(?:let|const|var) ([\w$]+) = class ([\w$]+) (.*) ;$/s.exec(key)
+	return m && m[1] === m[2] ? `class ${m[2]} ${m[3]}` : key
 }
 
 /** Comparison key of a free-standing snippet (used for vendor statements). */
