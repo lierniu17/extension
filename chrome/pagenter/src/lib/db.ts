@@ -1,28 +1,35 @@
-// TODO(types)
 // The extension's IndexedDB: agent sessions, TipScripts, the Sniff tables
 // (see `@/lib/sniff/db`), upstream MCP servers and the page-bridge KV store.
-import { openDB } from 'idb'
+import { type IDBPDatabase, openDB } from 'idb'
 
+import type { HistoricalEvent } from '@/core/types'
+import type {
+	NewSession,
+	NewTipScript,
+	PagenterDB,
+	SessionRecord,
+	TipScriptRecord,
+} from '@/lib/dbSchema'
 import { matchUrl } from '@/lib/urlMatch'
 
 const DB_NAME = 'page-agent-ext'
 const DB_VERSION = 4
 
-let dbPromise: Promise<any> | null = null
+let dbPromise: Promise<IDBPDatabase<PagenterDB>> | null = null
 
-export function getDB(): Promise<any> {
+export function getDB(): Promise<IDBPDatabase<PagenterDB>> {
 	if (!dbPromise) {
-		dbPromise = openDB(DB_NAME, DB_VERSION, {
+		dbPromise = openDB<PagenterDB>(DB_NAME, DB_VERSION, {
 			blocked(currentVersion, blockedVersion) {
 				console.warn(
 					`[db] open(v${blockedVersion}) is BLOCKED by an existing connection holding v${currentVersion}. Close other tabs / reload sidepanel.`
 				)
 			},
-			blocking(currentVersion, blockedVersion, event: any) {
+			blocking(currentVersion, blockedVersion, event) {
 				console.warn(
 					`[db] our connection (v${currentVersion}) is BLOCKING an upgrade to v${blockedVersion}. Releasing now.`
 				)
-				const conn = event.target
+				const conn = event.target as { result?: IDBDatabase } | null
 				conn?.result?.close()
 				dbPromise = null
 			},
@@ -83,7 +90,7 @@ export function getDB(): Promise<any> {
 		// A blocked upgrade never settles; fail after 8s so callers can retry.
 		dbPromise = Promise.race([
 			dbPromise,
-			new Promise((_, reject) =>
+			new Promise<never>((_, reject) =>
 				setTimeout(() => {
 					reject(
 						new Error(
@@ -103,10 +110,10 @@ export function getDB(): Promise<any> {
 // ---- sessions ----
 
 /** Sessions recorded before the progress / pending / reasoning output protocol. */
-function isIncompatibleHistory(history: any[]) {
+function isIncompatibleHistory(history: HistoricalEvent[]) {
 	for (const event of history) {
 		if (event.type !== 'step') continue
-		const r = event.reflection
+		const r: object | undefined = event.reflection
 		if (!r) continue
 		if ('evaluation_previous_goal' in r || 'memory' in r || 'next_goal' in r) return true
 		if (!('progress' in r)) return true
@@ -117,10 +124,10 @@ function isIncompatibleHistory(history: any[]) {
 export async function cleanupIncompatibleSessions() {
 	const db = await getDB()
 	const all = await db.getAll('sessions')
-	const targetIds = all.filter((s: any) => isIncompatibleHistory(s.history)).map((s: any) => s.id)
+	const targetIds = all.filter((s) => isIncompatibleHistory(s.history)).map((s) => s.id)
 	if (targetIds.length === 0) return 0
 	const tx = db.transaction('sessions', 'readwrite')
-	await Promise.all(targetIds.map((id: any) => tx.store.delete(id)))
+	await Promise.all(targetIds.map((id) => tx.store.delete(id)))
 	await tx.done
 	console.log(
 		`[db] removed ${targetIds.length} session(s) with incompatible reflection shape. Export to markdown beforehand if you want to keep them.`
@@ -128,7 +135,7 @@ export async function cleanupIncompatibleSessions() {
 	return targetIds.length
 }
 
-export async function saveSession(session: any) {
+export async function saveSession(session: NewSession): Promise<SessionRecord> {
 	await cleanupIncompatibleSessions().catch((e) => {
 		console.warn('[db] cleanupIncompatibleSessions failed (non-fatal):', e)
 	})
@@ -145,7 +152,7 @@ export async function saveSession(session: any) {
 	return record
 }
 
-export async function updateSession(id: any, patch: any) {
+export async function updateSession(id: string, patch: Partial<SessionRecord>) {
 	const db = await getDB()
 	const existing = await db.get('sessions', id)
 	if (!existing) return
@@ -153,19 +160,19 @@ export async function updateSession(id: any, patch: any) {
 }
 
 /** List sessions, newest first */
-export async function listSessions(): Promise<any[]> {
+export async function listSessions(): Promise<SessionRecord[]> {
 	const db = await getDB()
 	const all = await db.getAllFromIndex('sessions', 'by-created')
 	return all.reverse()
 }
 
-export async function getSession(id: any): Promise<any> {
+export async function getSession(id: string): Promise<SessionRecord | undefined> {
 	const db = await getDB()
 	return db.get('sessions', id)
 }
 
 /** Deletes the session and the page-bridge KV records it owned. */
-export async function deleteSession(id: any) {
+export async function deleteSession(id: string) {
 	const db = await getDB()
 	await db.delete('sessions', id)
 	const { kvClearBySession } = await import('@/lib/kvStore')
@@ -182,7 +189,7 @@ export async function clearSessions() {
 
 // ---- TipScripts ----
 
-export async function saveTipScript(mz: any) {
+export async function saveTipScript(mz: NewTipScript): Promise<TipScriptRecord> {
 	const db = await getDB()
 	const now = Date.now()
 	const record = {
@@ -195,7 +202,7 @@ export async function saveTipScript(mz: any) {
 	return record
 }
 
-export async function updateTipScript(id: any, patch: any) {
+export async function updateTipScript(id: string, patch: Partial<TipScriptRecord>) {
 	const db = await getDB()
 	const existing = await db.get('tipscripts', id)
 	if (!existing) return
@@ -203,19 +210,19 @@ export async function updateTipScript(id: any, patch: any) {
 }
 
 /** Most recently updated first */
-export async function listTipScripts(): Promise<any[]> {
+export async function listTipScripts(): Promise<TipScriptRecord[]> {
 	const db = await getDB()
 	const all = await db.getAllFromIndex('tipscripts', 'by-updated')
 	return all.reverse()
 }
 
-export async function deleteTipScript(id: any) {
+export async function deleteTipScript(id: string) {
 	const db = await getDB()
 	await db.delete('tipscripts', id)
 }
 
 /** Enabled TipScripts with at least one URL pattern matching `url`. */
-export async function getMatchingTipScripts(url: any) {
+export async function getMatchingTipScripts(url: string) {
 	const all = await listTipScripts()
-	return all.filter((mz) => mz.enabled && mz.urlPatterns.some((p: any) => matchUrl(p, url)))
+	return all.filter((mz) => mz.enabled && mz.urlPatterns.some((p) => matchUrl(p, url)))
 }

@@ -84,7 +84,7 @@ export function useAgent() {
 	}, [])
 	useEffect(() => {
 		chrome.storage.local.get('lastSessionId').then(async (result) => {
-			const lastId = result.lastSessionId
+			const lastId = result.lastSessionId as string | undefined
 			if (!lastId) return
 			const session = await getSession(lastId)
 			if (!session) return

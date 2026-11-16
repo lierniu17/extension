@@ -1,4 +1,3 @@
-// TODO(types)
 // Page-bridge KV store (`window.__pagenter.kv`): per-session key/value records
 // in the `pagenter_kv` store, with per-key and per-session size quotas.
 import { getDB, listSessions } from '@/lib/db'
@@ -23,7 +22,7 @@ function estimateBytes(value: unknown) {
 async function getSessionBytes(sessionId: string) {
 	const db = await getDB()
 	const records = await db.getAllFromIndex(STORE, 'by-session', sessionId)
-	return records.reduce((sum: number, r: any) => sum + (r.bytes || 0), 0)
+	return records.reduce((sum: number, r) => sum + (r.bytes || 0), 0)
 }
 
 export async function kvSet(sessionId: string, key: string, value: unknown) {
@@ -70,7 +69,7 @@ export async function kvList(sessionId: string): Promise<string[]> {
 	if (!sessionId) throw new Error('sessionId required')
 	const db = await getDB()
 	const records = await db.getAllFromIndex(STORE, 'by-session', sessionId)
-	return records.map((r: any) => r.key)
+	return records.map((r) => r.key)
 }
 
 export async function kvDelete(sessionId: string, key: string) {
@@ -99,7 +98,7 @@ export async function cleanupOrphanKv() {
 	const validIds = new Set(sessions.map((s) => s.id))
 	const db = await getDB()
 	const all = await db.getAll(STORE)
-	const orphans = all.filter((r: any) => !validIds.has(r.sessionId))
+	const orphans = all.filter((r) => !validIds.has(r.sessionId))
 	if (orphans.length === 0) return 0
 	const tx = db.transaction(STORE, 'readwrite')
 	for (const r of orphans) {

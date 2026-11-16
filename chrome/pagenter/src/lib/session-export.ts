@@ -1,10 +1,10 @@
-// TODO(types)
+import type { HistoricalEvent, StepEvent } from '@/core/types'
 
 function timestamp() {
 	return new Date().toISOString().replace('T', ' ').slice(0, 19)
 }
 
-function jsonBlock(data: any) {
+function jsonBlock(data: unknown) {
 	try {
 		return '```json\n' + JSON.stringify(data, null, 2) + '\n```'
 	} catch {
@@ -12,16 +12,16 @@ function jsonBlock(data: any) {
 	}
 }
 
-function codeBlock(lang: any, code: any) {
+function codeBlock(lang: string, code: string) {
 	return '```' + lang + '\n' + code + '\n```'
 }
 
-function formatMs(ms: any) {
+function formatMs(ms: number) {
 	if (ms < 1e3) return `${ms}ms`
 	return `${(ms / 1e3).toFixed(1)}s`
 }
 
-function formatStep(event: any) {
+function formatStep(event: StepEvent) {
 	const lines = []
 	lines.push(`## Step ${event.stepIndex}`)
 	lines.push('')
@@ -64,7 +64,7 @@ function formatStep(event: any) {
 	if (input != null) {
 		if (typeof input === 'object' && input.script) {
 			lines.push('- **Input**:')
-			lines.push(codeBlock('javascript', input.script))
+			lines.push(codeBlock('javascript', input.script as string))
 		} else {
 			lines.push('- **Input**: ' + jsonBlock(input))
 		}
@@ -112,7 +112,7 @@ function formatStep(event: any) {
 	return lines.join('\n')
 }
 
-function formatEvent(event: any) {
+function formatEvent(event: HistoricalEvent) {
 	switch (event.type) {
 		case 'step':
 			return formatStep(event)
@@ -156,7 +156,7 @@ ${event.message}
 	}
 }
 
-function buildStats(history: any) {
+function buildStats(history: HistoricalEvent[]) {
 	const stats = {
 		stepCount: 0,
 		totalPromptTokens: 0,
@@ -185,7 +185,7 @@ function buildStats(history: any) {
 	return stats
 }
 
-function formatStats(stats: any) {
+function formatStats(stats: ReturnType<typeof buildStats>) {
 	const lines = ['## Session Statistics', '']
 	lines.push(`| Metric | Value |`)
 	lines.push(`|--------|-------|`)
@@ -210,7 +210,12 @@ function formatStats(stats: any) {
 	return lines.join('\n')
 }
 
-export function exportSessionAsMarkdown(history: any, task: any, modelInfo: any, currentScript: any) {
+export function exportSessionAsMarkdown(
+	history: HistoricalEvent[],
+	task: string,
+	modelInfo: { model: string; supportsVision?: boolean } | null | undefined,
+	currentScript: string | null | undefined
+) {
 	const stats = buildStats(history)
 	const lines = []
 	lines.push('# Session Report')
