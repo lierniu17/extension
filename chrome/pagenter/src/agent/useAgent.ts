@@ -1,6 +1,7 @@
 // TODO(types)
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import type { AgentStatus } from '@/core/types'
 import { getSession, saveSession, saveTipScript, updateSession } from '@/lib/db'
 
 import { MultiPageAgent } from './MultiPageAgent'
@@ -21,13 +22,13 @@ export function postAgentStop(payload: any) {
 
 export function useAgent() {
 	const agentRef = useRef<any>(null)
-	const [status, setStatus] = useState('idle')
+	const [status, setStatus] = useState<AgentStatus>('idle')
 	const [history, setHistory] = useState<any>([])
 	const [activity, setActivity] = useState<any>(null)
 	const [currentTask, setCurrentTask] = useState('')
 	const [sessionId, setSessionId] = useState<any>(null)
 	const [config, setConfig] = useState<any>(null)
-	const [mode, setMode] = useState('normal')
+	const [mode, setMode] = useState<any>('normal')
 	const modelInfo = config?.model
 		? {
 				model: config.model,
@@ -155,7 +156,7 @@ export function useAgent() {
 		const agent = mode === 'script' ? new ScriptModeAgent(agentOpts) : new MultiPageAgent(agentOpts)
 		agentRef.current = agent
 		const handleStatusChange = () => {
-			const newStatus = agent.status
+			const newStatus = agent.status as AgentStatus
 			const cleared = newStatus === 'idle' || newStatus === 'completed' || newStatus === 'error'
 			setStatus(newStatus)
 			if (cleared) {
