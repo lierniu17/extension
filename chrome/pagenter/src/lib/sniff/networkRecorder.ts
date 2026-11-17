@@ -3,7 +3,7 @@
 import { addCdpEventListener, cdpAcquire, cdpRelease, cdpSend } from '@/lib/cdp'
 import type { SniffBody, SniffProject, SniffProjectConfig, SniffSample } from '@/lib/dbSchema'
 import { upsertApi } from '@/lib/sniff/db'
-import { type ScrubOptions, scrubHeaders, scrubValue } from '@/lib/sniff/scrub'
+import { type ScrubOptions, scrubHeaders, scrubUrlQuery, scrubValue } from '@/lib/sniff/scrub'
 import { normalizeUrl } from '@/lib/sniff/urlNormalize'
 
 /** The fields of CDP `Network.Request` the recorder reads. */
@@ -266,7 +266,8 @@ export class NetworkRecorder {
 			apiId: api.id,
 			projectId: project.id,
 			tabId,
-			url: rec.request.url,
+			// query values scrubbed like bodies; `__query` and Schema examples derive from this URL
+			url: scrubUrlQuery(rec.request.url, scrubOpts),
 			method: normalized.method,
 			reqHeaders: cleanReqHeaders,
 			reqBody: cleanReqBody,
