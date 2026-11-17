@@ -1,4 +1,3 @@
-// TODO(types)
 import { HatGlasses, House } from 'lucide-react'
 import { siGithub } from 'simple-icons'
 import { useI18n } from '@/i18n'

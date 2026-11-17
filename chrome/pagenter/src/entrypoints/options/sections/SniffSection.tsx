@@ -1,10 +1,9 @@
-// TODO(types)
 import { useCallback, useEffect, useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { useI18n } from '@/i18n'
-import type { UpstreamMcpServer } from '@/lib/dbSchema'
+import type { UpstreamMcpServer, UpstreamMcpTransport } from '@/lib/dbSchema'
 import {
 	deleteUpstreamMcpServer,
 	listUpstreamMcpServers,
@@ -13,7 +12,14 @@ import {
 
 const STORAGE_KEY_LLM = 'sniffLlmConfig'
 
-export function SniffSection({ onSettingsChanged }: any) {
+/** The `sniffLlmConfig` storage entry: model settings Sniff uses instead of the main ones. */
+interface SniffLlmOverride {
+	baseURL?: string
+	apiKey?: string
+	model?: string
+}
+
+export function SniffSection({ onSettingsChanged }: { onSettingsChanged?: () => void }) {
 	const { t } = useI18n()
 	return (
 		<div className="space-y-10">
@@ -24,18 +30,18 @@ export function SniffSection({ onSettingsChanged }: any) {
 	)
 }
 
-function LlmOverrideCard({ onChanged }: any) {
+function LlmOverrideCard({ onChanged }: { onChanged?: () => void }) {
 	const { t } = useI18n()
-	const [override, setOverride] = useState<any>(null)
-	const [enabled, setEnabled] = useState<any>(false)
+	const [override, setOverride] = useState<SniffLlmOverride | null | undefined>(null)
+	const [enabled, setEnabled] = useState<boolean>(false)
 	useEffect(() => {
 		chrome.storage.local.get(STORAGE_KEY_LLM).then((r) => {
-			const stored = r[STORAGE_KEY_LLM]
+			const stored = r[STORAGE_KEY_LLM] as SniffLlmOverride | undefined
 			setOverride(stored)
 			setEnabled(!!stored)
 		})
 	}, [])
-	const toggleEnabled = (checked: any) => {
+	const toggleEnabled = (checked: boolean) => {
 		setEnabled(checked)
 		if (!checked) {
 			chrome.storage.local.remove(STORAGE_KEY_LLM)
@@ -45,7 +51,7 @@ function LlmOverrideCard({ onChanged }: any) {
 			setOverride({ baseURL: '', apiKey: '', model: '' })
 		}
 	}
-	const saveField = async (patch: any) => {
+	const saveField = async (patch: SniffLlmOverride) => {
 		const next = override ? { ...override, ...patch } : patch
 		setOverride(next)
 		await chrome.storage.local.set({ [STORAGE_KEY_LLM]: next })
@@ -66,20 +72,20 @@ function LlmOverrideCard({ onChanged }: any) {
 						label="baseURL"
 						value={override.baseURL ?? ''}
 						placeholder="https://api.openai.com/v1"
-						onChange={(v: any) => saveField({ baseURL: v })}
+						onChange={(v) => saveField({ baseURL: v })}
 					/>
 					<LabeledInput
 						label="apiKey"
 						value={override.apiKey ?? ''}
 						placeholder="sk-..."
 						type="password"
-						onChange={(v: any) => saveField({ apiKey: v })}
+						onChange={(v) => saveField({ apiKey: v })}
 					/>
 					<LabeledInput
 						label="model"
 						value={override.model ?? ''}
 						placeholder="gpt-4o-mini"
-						onChange={(v: any) => saveField({ model: v })}
+						onChange={(v) => saveField({ model: v })}
 					/>
 				</div>
 			)}
@@ -90,7 +96,13 @@ function LlmOverrideCard({ onChanged }: any) {
 	)
 }
 
-function LabeledInput({ label, value, onChange, type = 'text', placeholder }: any) {
+function LabeledInput({ label, value, onChange, type = 'text', placeholder }: {
+	label: string
+	value: string
+	onChange: (value: string) => void
+	type?: string
+	placeholder?: string
+}) {
 	return (
 		<div className="flex flex-col gap-1">
 			<span className="text-xs font-mono text-foreground/60">{label}</span>
@@ -105,10 +117,10 @@ function LabeledInput({ label, value, onChange, type = 'text', placeholder }: an
 	)
 }
 
-function UpstreamMcpCard({ onChanged }: any) {
+function UpstreamMcpCard({ onChanged }: { onChanged?: () => void }) {
 	const { t } = useI18n()
-	const [servers, setServers] = useState<any>([])
-	const [editingId, setEditingId] = useState<any>(null)
+	const [servers, setServers] = useState<UpstreamMcpServer[]>([])
+	const [editingId, setEditingId] = useState<string | null>(null)
 	const refresh = useCallback(async () => {
 		const rows = await listUpstreamMcpServers()
 		setServers(rows)
@@ -141,12 +153,12 @@ function UpstreamMcpCard({ onChanged }: any) {
 		onChanged?.()
 		await refresh()
 	}
-	const saveServer = async (patch: any) => {
+	const saveServer = async (patch: UpstreamMcpServer) => {
 		await putUpstreamMcpServer({ ...patch, updatedAt: Date.now() })
 		onChanged?.()
 		await refresh()
 	}
-	const removeServer = async (id: any) => {
+	const removeServer = async (id: string) => {
 		await deleteUpstreamMcpServer(id)
 		if (editingId === id) setEditingId(null)
 		onChanged?.()
@@ -170,7 +182,7 @@ function UpstreamMcpCard({ onChanged }: any) {
 				</div>
 			)}
 			<div className="space-y-2">
-				{servers.map((s: any) => (
+				{servers.map((s) => (
 					<McpServerRow
 						key={`${s.id}:${editingId === s.id ? 'edit' : 'view'}:${s.updatedAt}`}
 						server={s}
@@ -185,10 +197,16 @@ function UpstreamMcpCard({ onChanged }: any) {
 	)
 }
 
-function McpServerRow({ server, editing, onEditToggle, onSave, onDelete }: any) {
+function McpServerRow({ server, editing, onEditToggle, onSave, onDelete }: {
+	server: UpstreamMcpServer
+	editing: boolean
+	onEditToggle: () => void
+	onSave: (server: UpstreamMcpServer) => Promise<void>
+	onDelete: () => void
+}) {
 	const { t } = useI18n()
-	const [draft, setDraft] = useState<any>(server)
-	const commit = async (patch: any) => {
+	const [draft, setDraft] = useState<UpstreamMcpServer>(server)
+	const commit = async (patch: Partial<UpstreamMcpServer>) => {
 		const next = { ...draft, ...patch }
 		setDraft(next)
 		await onSave(next)
@@ -224,7 +242,7 @@ function McpServerRow({ server, editing, onEditToggle, onSave, onDelete }: any) 
 					<LabeledInput
 						label={t('sniff.options.mcp.form.name')}
 						value={draft.name}
-						onChange={(v: any) => commit({ name: v })}
+						onChange={(v) => commit({ name: v })}
 					/>
 					<div className="flex flex-col gap-1">
 						<span className="text-xs font-mono text-foreground/60">
@@ -234,7 +252,7 @@ function McpServerRow({ server, editing, onEditToggle, onSave, onDelete }: any) 
 							value={draft.transport}
 							onChange={(e) =>
 								commit({
-									transport: e.target.value,
+									transport: e.target.value as UpstreamMcpTransport,
 								})
 							}
 							className="h-9 px-3 text-sm border rounded-lg bg-background"
@@ -249,7 +267,7 @@ function McpServerRow({ server, editing, onEditToggle, onSave, onDelete }: any) 
 								label={t('sniff.options.mcp.form.command')}
 								value={draft.command ?? ''}
 								placeholder="npx"
-								onChange={(v: any) => commit({ command: v })}
+								onChange={(v) => commit({ command: v })}
 							/>
 							<div className="flex flex-col gap-1">
 								<span className="text-xs font-mono text-foreground/60">
@@ -278,7 +296,7 @@ function McpServerRow({ server, editing, onEditToggle, onSave, onDelete }: any) 
 							label={t('sniff.options.mcp.form.url')}
 							value={draft.url ?? ''}
 							placeholder="http://localhost:3000/sse"
-							onChange={(v: any) => commit({ url: v })}
+							onChange={(v) => commit({ url: v })}
 						/>
 					)}
 					<LabeledInput
@@ -289,11 +307,11 @@ function McpServerRow({ server, editing, onEditToggle, onSave, onDelete }: any) 
 								: (draft.allowedTools ?? '')
 						}
 						placeholder="* or tool1, tool2"
-						onChange={(v: any) =>
+						onChange={(v) =>
 							commit({
 								allowedTools: v
 									.split(',')
-									.map((s: any) => s.trim())
+									.map((s) => s.trim())
 									.filter(Boolean),
 							})
 						}

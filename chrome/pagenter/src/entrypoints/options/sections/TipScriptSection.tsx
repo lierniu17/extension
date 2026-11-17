@@ -1,4 +1,3 @@
-// TODO(types)
 import { useCallback, useEffect, useState } from 'react'
 import { ChevronDown, Download, LoaderCircle, Pencil, Plus, Trash2, Upload, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -6,8 +5,9 @@ import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { useI18n } from '@/i18n'
 import { deleteTipScript, listTipScripts, saveTipScript, updateTipScript } from '@/lib/db'
+import type { NewTipScript, TipScriptRecord, TipScriptTriggerMode } from '@/lib/dbSchema'
 
-const EMPTY_FORM = {
+const EMPTY_FORM: NewTipScript = {
 	name: '',
 	description: '',
 	script: '',
@@ -18,15 +18,15 @@ const EMPTY_FORM = {
 
 export function TipScriptSection() {
 	const { t } = useI18n()
-	const [items, setItems] = useState<any>([])
-	const [search, setSearch] = useState<any>('')
-	const [editing, setEditing] = useState<any>(null)
-	const [creating, setCreating] = useState<any>(false)
-	const [form, setForm] = useState<any>(EMPTY_FORM)
-	const [saving, setSaving] = useState<any>(false)
-	const [expandedIds, setExpandedIds] = useState<any>(new Set())
-	const toggleExpanded = useCallback((id: any) => {
-		setExpandedIds((prev: any) => {
+	const [items, setItems] = useState<TipScriptRecord[]>([])
+	const [search, setSearch] = useState<string>('')
+	const [editing, setEditing] = useState<TipScriptRecord | null>(null)
+	const [creating, setCreating] = useState<boolean>(false)
+	const [form, setForm] = useState<NewTipScript>(EMPTY_FORM)
+	const [saving, setSaving] = useState<boolean>(false)
+	const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
+	const toggleExpanded = useCallback((id: string) => {
+		setExpandedIds((prev) => {
 			const next = new Set(prev)
 			if (next.has(id)) next.delete(id)
 			else next.add(id)
@@ -41,7 +41,7 @@ export function TipScriptSection() {
 		refresh()
 	}, [refresh])
 	const filtered = items.filter(
-		(ts: any) =>
+		(ts) =>
 			!search ||
 			ts.name.toLowerCase().includes(search.toLowerCase()) ||
 			ts.description.toLowerCase().includes(search.toLowerCase())
@@ -51,7 +51,7 @@ export function TipScriptSection() {
 		setForm(EMPTY_FORM)
 		setCreating(true)
 	}
-	const handleEdit = (ts: any) => {
+	const handleEdit = (ts: TipScriptRecord) => {
 		setCreating(false)
 		setEditing(ts)
 		setForm({
@@ -82,14 +82,14 @@ export function TipScriptSection() {
 			setSaving(false)
 		}
 	}
-	const handleDelete = async (id: any) => {
+	const handleDelete = async (id: string) => {
 		await deleteTipScript(id)
 		if (editing?.id === id) {
 			setEditing(null)
 		}
 		await refresh()
 	}
-	const handleToggle = async (ts: any) => {
+	const handleToggle = async (ts: TipScriptRecord) => {
 		await updateTipScript(ts.id, { enabled: !ts.enabled })
 		await refresh()
 	}
@@ -107,8 +107,8 @@ export function TipScriptSection() {
 		input.type = 'file'
 		input.accept = '.json,.js,.ts,.txt'
 		input.multiple = true
-		input.onchange = async (e: any) => {
-			const files = e.target.files
+		input.onchange = async (e: Event) => {
+			const files = (e.target as HTMLInputElement).files
 			if (!files?.length) return
 			try {
 				for (const file of Array.from(files as FileList)) {
@@ -145,18 +145,18 @@ export function TipScriptSection() {
 		input.click()
 	}
 	const addUrlPattern = () => {
-		setForm((f: any) => ({ ...f, urlPatterns: [...f.urlPatterns, ''] }))
+		setForm((f) => ({ ...f, urlPatterns: [...f.urlPatterns, ''] }))
 	}
-	const removeUrlPattern = (idx: any) => {
-		setForm((f: any) => ({
+	const removeUrlPattern = (idx: number) => {
+		setForm((f) => ({
 			...f,
-			urlPatterns: f.urlPatterns.filter((_: any, i: any) => i !== idx),
+			urlPatterns: f.urlPatterns.filter((_, i) => i !== idx),
 		}))
 	}
-	const updateUrlPattern = (idx: any, value: any) => {
-		setForm((f: any) => ({
+	const updateUrlPattern = (idx: number, value: string) => {
+		setForm((f) => ({
 			...f,
-			urlPatterns: f.urlPatterns.map((p: any, i: any) => (i === idx ? value : p)),
+			urlPatterns: f.urlPatterns.map((p, i) => (i === idx ? value : p)),
 		}))
 	}
 	if (creating || editing) {
@@ -175,7 +175,7 @@ export function TipScriptSection() {
 						<label className="text-base font-semibold text-foreground">{t('tipScript.name')}</label>
 						<Input
 							value={form.name}
-							onChange={(e) => setForm((f: any) => ({ ...f, name: e.target.value }))}
+							onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
 							placeholder={t('tipScript.name.placeholder')}
 							className="h-10 text-base"
 						/>
@@ -186,7 +186,7 @@ export function TipScriptSection() {
 						</label>
 						<Input
 							value={form.description}
-							onChange={(e) => setForm((f: any) => ({ ...f, description: e.target.value }))}
+							onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
 							placeholder={t('tipScript.description.placeholder')}
 							className="h-10 text-base"
 						/>
@@ -197,7 +197,7 @@ export function TipScriptSection() {
 						</label>
 						<textarea
 							value={form.script}
-							onChange={(e) => setForm((f: any) => ({ ...f, script: e.target.value }))}
+							onChange={(e) => setForm((f) => ({ ...f, script: e.target.value }))}
 							placeholder={t('tipScript.script.placeholder')}
 							rows={12}
 							className="w-full text-sm font-mono rounded-lg border border-input bg-background px-4 py-3 resize-y min-h-[200px] leading-relaxed"
@@ -209,7 +209,7 @@ export function TipScriptSection() {
 							{t('tipScript.urlPatterns')}
 						</label>
 						<p className="text-sm text-foreground/50">{t('tipScript.urlPatterns.hint')}</p>
-						{form.urlPatterns.map((pattern: any, idx: any) => (
+						{form.urlPatterns.map((pattern, idx) => (
 							<div key={idx} className="flex gap-2 items-center">
 								<Input
 									value={pattern}
@@ -241,9 +241,9 @@ export function TipScriptSection() {
 						<select
 							value={form.triggerMode}
 							onChange={(e) =>
-								setForm((f: any) => ({
+								setForm((f) => ({
 									...f,
-									triggerMode: e.target.value,
+									triggerMode: e.target.value as TipScriptTriggerMode,
 								}))
 							}
 							className="w-full h-10 text-base rounded-lg border border-input bg-background px-3 cursor-pointer"
@@ -256,7 +256,7 @@ export function TipScriptSection() {
 						<span className="text-base text-foreground">{t('tipScript.enabled')}</span>
 						<Switch
 							checked={form.enabled}
-							onCheckedChange={(v) => setForm((f: any) => ({ ...f, enabled: v }))}
+							onCheckedChange={(v) => setForm((f) => ({ ...f, enabled: v }))}
 						/>
 					</label>
 					<div className="flex gap-3 pt-3">
@@ -309,7 +309,7 @@ export function TipScriptSection() {
 				</div>
 			) : (
 				<div className="space-y-3 min-w-0">
-					{filtered.map((ts: any) => {
+					{filtered.map((ts) => {
 						const isExpanded = expandedIds.has(ts.id)
 						return (
 							<div key={ts.id} className="rounded-xl border overflow-hidden min-w-0 max-w-full">
@@ -383,7 +383,7 @@ export function TipScriptSection() {
 												{t('tipScript.urlPatterns')}
 											</div>
 											<ul className="space-y-0.5">
-												{ts.urlPatterns.map((p: any, i: any) => (
+												{ts.urlPatterns.map((p, i) => (
 													<li key={i} className="text-xs font-mono text-foreground/70 break-all">
 														{p}
 													</li>
