@@ -4,20 +4,20 @@
 
 | 目录 | 扩展 | 说明 |
 |---|---|---|
-| [`chrome/pagenter-ext-1.8.0-chrome`](chrome/pagenter-ext-1.8.0-chrome) | Pagenter 1.8.0 | AI 驱动的浏览器自动化助手，用自然语言控制网页 |
-| [`chrome/pagenter`](chrome/pagenter) | Pagenter 1.8.0 还原源码 | 从上面的产物还原出的 WXT 工程，见 [chrome/pagenter/README.md](chrome/pagenter/README.md) |
+| [`chrome/pagenter`](chrome/pagenter) | Pagenter 1.8.0 | AI 驱动的浏览器自动化助手，用自然语言控制网页；从原产物逆向还原出的 WXT 工程，见 [chrome/pagenter/README.md](chrome/pagenter/README.md) |
 | [`vscode/drag-import`](vscode/drag-import) | Drag Import 1.0.0 | 在 VS Code / Cursor 中拖入文件，自动生成 `import` 语句 |
 
 ## Pagenter
 
-Chrome Manifest V3 扩展，当前目录是已打包的 1.8.0 版本（含弹窗、侧边栏、设置页与 Hub）。界面语言为英文和简体中文。
+Chrome Manifest V3 扩展（含弹窗、侧边栏、设置页与 Hub），界面语言为英文和简体中文。源码在 `chrome/pagenter`；原产物 `chrome/pagenter-ext-1.8.0-chrome` 在逆向完成后已删除，需要时从 git 历史取回。
 
 在 Chrome 中加载：
 
-1. 打开 `chrome://extensions`
-2. 打开右上角 **开发者模式**
-3. 选择 **加载已解压的扩展程序**
-4. 选中 `chrome/pagenter-ext-1.8.0-chrome`
+1. 在 `chrome/pagenter` 下执行 `pnpm install` 和 `pnpm build`
+2. 打开 `chrome://extensions`
+3. 打开右上角 **开发者模式**
+4. 选择 **加载已解压的扩展程序**
+5. 选中 `chrome/pagenter/.output/pagenter-ext-1.8.0-chrome`
 
 加载后点击工具栏图标打开弹窗，也可从扩展菜单打开侧边栏或设置页。
 

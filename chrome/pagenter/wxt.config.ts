@@ -3,23 +3,17 @@ import { readFileSync } from 'node:fs'
 import cssInjectedByJsPlugin from 'vite-plugin-css-injected-by-js'
 import { defineConfig } from 'wxt'
 
-import { declOriginPlugin, resetDeclOrigin } from './scripts/compare/decl-origin-plugin.ts'
 import { cssInjectionInsideIifePlugin } from './scripts/css-injection-inside-iife.ts'
 
 const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'))
 
-// Where the declaration-origin map of every build goes. It sits outside the
-// extension directory so the built file list stays identical to the bundle.
-const DECL_ORIGIN_DIR = '.output/compare/decl-origin'
-
 // See https://wxt.dev/api/config.html
 // Baseline: upstream page-agent v1.7.1 packages/extension/wxt.config.js.
-// Manifest fields follow the Pagenter 1.8.0 bundle (chrome/pagenter-ext-1.8.0-chrome).
+// Manifest fields follow the Pagenter 1.8.0 bundle (chrome/pagenter-ext-1.8.0-chrome, now only in git history).
 export default defineConfig({
 	srcDir: 'src',
 	modules: ['@wxt-dev/module-react'],
 	hooks: {
-		'build:before': () => resetDeclOrigin(DECL_ORIGIN_DIR),
 		// The bundle consumed page-controller as upstream's library build, which
 		// injects its CSS modules (SimulatorMask, cursor) from JS via
 		// vite-plugin-css-injected-by-js instead of emitting a stylesheet.
@@ -39,14 +33,11 @@ export default defineConfig({
 		},
 	},
 	vite: () => ({
-		plugins: [tailwindcss(), declOriginPlugin(DECL_ORIGIN_DIR)],
+		plugins: [tailwindcss()],
 		define: {
 			__VERSION__: JSON.stringify(pkg.version),
 		},
 		build: {
-			// Minification stays off so the output can be compared function by
-			// function with the bundle (names and comments must survive).
-			minify: false,
 			chunkSizeWarningLimit: 2000,
 			cssCodeSplit: true,
 			rollupOptions: {
@@ -57,6 +48,9 @@ export default defineConfig({
 			},
 		},
 	}),
+	// Same naming as the original bundle (pagenter-ext-1.8.0-chrome). WXT's template
+	// has no {{version}} placeholder, so the version comes from package.json.
+	outDirTemplate: `pagenter-ext-${pkg.version}-{{browser}}{{modeSuffix}}`,
 	zip: {
 		artifactTemplate: 'pagenter-ext-{{version}}-{{browser}}.zip',
 	},
