@@ -17,11 +17,8 @@ export function extractOrigin(url: string | null | undefined) {
 		return null
 	}
 }
+/** An empty pattern list matches no origin (security fix: it used to allow all origins). */
 export function originMatches(origin: string, patterns: string[]) {
-	if (patterns.length === 0) {
-		console.warn('[Pagenter Bridge] project has empty originPatterns, allowing all origins')
-		return true
-	}
 	for (const p of patterns) {
 		if (p === origin) return true
 		if (p.endsWith('*') && origin.startsWith(p.slice(0, -1))) return true

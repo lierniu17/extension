@@ -229,6 +229,8 @@ export const en: Record<string, string> = {
 	'sniff.project.tab.apis': 'APIs',
 	'sniff.project.tab.samples': 'Samples',
 	'sniff.project.tab.settings': 'Settings',
+	'sniff.project.noOrigin':
+		'No origin set: the APIs of this project are not available to any site. Create the project from a tab on the target site so its origin is filled in.',
 	'sniff.api.method': 'Method',
 	'sniff.api.pattern': 'URL Pattern',
 	'sniff.api.samples': 'Samples',

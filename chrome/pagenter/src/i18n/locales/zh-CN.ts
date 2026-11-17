@@ -221,6 +221,7 @@ export const zhCN: Record<string, string> = {
 	'sniff.project.tab.apis': '接口',
 	'sniff.project.tab.samples': '样本',
 	'sniff.project.tab.settings': '设置',
+	'sniff.project.noOrigin': '未设置来源：该项目的接口不会对任何网站开放。请在目标网站的标签页上新建项目以填写来源。',
 	'sniff.api.method': '方法',
 	'sniff.api.pattern': 'URL 模式',
 	'sniff.api.samples': '样本数',
