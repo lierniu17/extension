@@ -1,15 +1,15 @@
-// TODO(types)
 import { useProjectList } from '@/components/sniff/hooks'
 import { useI18n } from '@/i18n'
 import { createProject, deleteProject } from '@/lib/sniff/db'
 import { Button } from '@/components/ui/button'
 import { CirclePlay, Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
+import type { SniffProject } from '@/lib/dbSchema'
 
-export function ProjectList({ onSelect }: any) {
+export function ProjectList({ onSelect }: { onSelect: (projectId: string) => void }) {
 	const { t } = useI18n()
 	const { projects, loading, refresh } = useProjectList()
-	const [creating, setCreating] = useState<any>(null)
+	const [creating, setCreating] = useState<{ name: string; origin: string } | null>(null)
 	const openCreateForm = async () => {
 		const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
 		let origin = ''
@@ -34,7 +34,7 @@ export function ProjectList({ onSelect }: any) {
 		setCreating(null)
 		refresh()
 	}
-	const handleDelete = async (p: any) => {
+	const handleDelete = async (p: SniffProject) => {
 		if (!confirm(t('sniff.project.delete.confirm'))) return
 		await deleteProject(p.id)
 		refresh()
@@ -83,7 +83,7 @@ export function ProjectList({ onSelect }: any) {
 						<div className="mt-1 text-xs text-muted-foreground">{t('sniff.empty.desc')}</div>
 					</div>
 				)}
-				{projects.map((p: any) => (
+				{projects.map((p) => (
 					<ProjectRow
 						key={p.id}
 						project={p}
@@ -96,7 +96,7 @@ export function ProjectList({ onSelect }: any) {
 	)
 }
 
-function ProjectRow({ project, onSelect, onDelete }: any) {
+function ProjectRow({ project, onSelect, onDelete }: { project: SniffProject; onSelect: () => void; onDelete: () => void }) {
 	const { t } = useI18n()
 	const dotClass = project.status === 'recording' ? 'bg-green-500 animate-pulse' : 'bg-gray-400'
 	const statusLabel = t(`sniff.project.status.${project.status}`)

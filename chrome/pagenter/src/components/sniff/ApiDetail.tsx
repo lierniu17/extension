@@ -1,12 +1,13 @@
-// TODO(types)
 import { useApiDetail } from '@/components/sniff/hooks'
 import { useI18n } from '@/i18n'
 import { updateApi } from '@/lib/sniff/db'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useCallback, useState } from 'react'
+import type { SniffBody, SniffSample } from '@/lib/dbSchema'
+import type { InferredSchema } from '@/lib/sniff/schemaInfer'
 
-export function ApiDetail({ apiId, onBack }: any) {
+export function ApiDetail({ apiId, onBack }: { apiId: string; onBack: () => void }) {
 	const { t } = useI18n()
 	const { api, spec, samples, loading, refresh } = useApiDetail(apiId)
 	const toggleExpose = useCallback(async () => {
@@ -52,7 +53,7 @@ export function ApiDetail({ apiId, onBack }: any) {
 						<EditableField
 							label={t('sniff.api.toolName')}
 							value={api.toolName ?? ''}
-							onSubmit={async (v: any) => {
+							onSubmit={async (v) => {
 								await updateApi(api.id, { toolName: v.trim() || void 0 })
 								refresh()
 							}}
@@ -61,7 +62,7 @@ export function ApiDetail({ apiId, onBack }: any) {
 						<EditableField
 							label={t('sniff.api.displayName')}
 							value={api.displayName ?? ''}
-							onSubmit={async (v: any) => {
+							onSubmit={async (v) => {
 								await updateApi(api.id, { displayName: v.trim() || void 0 })
 								refresh()
 							}}
@@ -69,7 +70,7 @@ export function ApiDetail({ apiId, onBack }: any) {
 						<EditableField
 							label={t('sniff.api.description')}
 							value={api.description ?? ''}
-							onSubmit={async (v: any) => {
+							onSubmit={async (v) => {
 								await updateApi(api.id, { description: v.trim() || void 0 })
 								refresh()
 							}}
@@ -92,12 +93,18 @@ export function ApiDetail({ apiId, onBack }: any) {
 	)
 }
 
-function buildDefaultToolName(method: any, pattern: any) {
+function buildDefaultToolName(method: string, pattern: string) {
 	const safe = pattern.replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_|_$/g, '')
 	return `${method.toLowerCase()}_${safe}`.slice(0, 64)
 }
 
-function EditableField({ label, value, onSubmit, mono, multiline }: any) {
+function EditableField({ label, value, onSubmit, mono, multiline }: {
+	label: string
+	value: string
+	onSubmit: (value: string) => Promise<void>
+	mono?: boolean
+	multiline?: boolean
+}) {
 	const [draft, setDraft] = useState(value)
 	const [editing, setEditing] = useState(false)
 	if (!editing && draft !== value) setDraft(value)
@@ -134,7 +141,7 @@ function EditableField({ label, value, onSubmit, mono, multiline }: any) {
 	)
 }
 
-function SchemaBlock({ title, schema }: any) {
+function SchemaBlock({ title, schema }: { title: string; schema: InferredSchema | null }) {
 	const [open, setOpen] = useState(true)
 	return (
 		<div className="border-b">
@@ -156,10 +163,10 @@ function SchemaBlock({ title, schema }: any) {
 	)
 }
 
-function SamplesBlock({ samples }: any) {
+function SamplesBlock({ samples }: { samples: SniffSample[] }) {
 	const { t } = useI18n()
 	const [open, setOpen] = useState(false)
-	const [expandedId, setExpandedId] = useState<any>(null)
+	const [expandedId, setExpandedId] = useState<string | null>(null)
 	if (samples.length === 0) {
 		return (
 			<div className="px-3 py-2 text-[10px] text-muted-foreground border-b">
@@ -179,7 +186,7 @@ function SamplesBlock({ samples }: any) {
 			</button>
 			{open && (
 				<div className="text-[10px] font-mono">
-					{samples.map((s: any) => {
+					{samples.map((s) => {
 						const expanded = expandedId === s.id
 						return (
 							<div key={s.id} className="border-t first:border-t-0">
@@ -204,7 +211,7 @@ function SamplesBlock({ samples }: any) {
 	)
 }
 
-function SampleBody({ sample }: any) {
+function SampleBody({ sample }: { sample: SniffSample }) {
 	const { t } = useI18n()
 	const reqText = bodyText(sample.reqBody)
 	const resText = bodyText(sample.resBody)
@@ -222,7 +229,7 @@ function SampleBody({ sample }: any) {
 	)
 }
 
-function bodyText(blob: any) {
+function bodyText(blob: SniffBody | null) {
 	if (!blob) return '(empty)'
 	if (blob.encoding !== 'utf8') {
 		return `(${blob.encoding}, ${blob.originalSize} bytes${blob.truncated ? ', truncated' : ''})`
@@ -234,7 +241,7 @@ function bodyText(blob: any) {
 	}
 }
 
-function statusColor(status: any) {
+function statusColor(status: number) {
 	if (status >= 500) return 'text-red-600'
 	if (status >= 400) return 'text-yellow-600'
 	if (status >= 200 && status < 300) return 'text-green-600'

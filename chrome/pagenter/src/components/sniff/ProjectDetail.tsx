@@ -1,4 +1,3 @@
-// TODO(types)
 import { ApiDetail } from '@/components/sniff/ApiDetail'
 import { useApiList } from '@/components/sniff/hooks'
 import { useI18n } from '@/i18n'
@@ -6,12 +5,13 @@ import { getProject } from '@/lib/sniff/db'
 import { ChevronLeft, Pause, Play } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { SniffProject } from '@/lib/dbSchema'
 
-export function ProjectDetail({ projectId, onBack }: any) {
+export function ProjectDetail({ projectId, onBack }: { projectId: string; onBack: () => void }) {
 	const { t } = useI18n()
-	const [project, setProject] = useState<any>(null)
+	const [project, setProject] = useState<SniffProject | null>(null)
 	const [subTab, setSubTab] = useState('apis')
-	const [selectedApiId, setSelectedApiId] = useState<any>(null)
+	const [selectedApiId, setSelectedApiId] = useState<string | null>(null)
 	useEffect(() => {
 		let cancelled = false
 		const load = async () => {
@@ -99,7 +99,7 @@ export function ProjectDetail({ projectId, onBack }: any) {
 	)
 }
 
-function ApiList({ projectId, onSelect }: any) {
+function ApiList({ projectId, onSelect }: { projectId: string; onSelect: (apiId: string) => void }) {
 	const { t } = useI18n()
 	const { apis, loading } = useApiList(projectId)
 	const sorted = useMemo(() => [...apis].sort((a, b) => b.sampleCount - a.sampleCount), [apis])
@@ -147,7 +147,7 @@ function ApiList({ projectId, onSelect }: any) {
 	)
 }
 
-function methodColor(method: any) {
+function methodColor(method: string) {
 	switch (method.toUpperCase()) {
 		case 'GET':
 			return 'bg-green-100 text-green-800'
@@ -163,7 +163,7 @@ function methodColor(method: any) {
 	}
 }
 
-function SettingsPane({ project }: any) {
+function SettingsPane({ project }: { project: SniffProject }) {
 	return (
 		<div className="p-3 text-xs space-y-2">
 			<SettingRow k="maxBodyKB" v={String(project.config.maxBodyKB)} />
@@ -185,7 +185,7 @@ function SettingsPane({ project }: any) {
 	)
 }
 
-function SettingRow({ k, v }: any) {
+function SettingRow({ k, v }: { k: string; v: string }) {
 	return (
 		<div className="flex gap-2">
 			<span className="w-32 font-mono text-muted-foreground shrink-0">{k}</span>
