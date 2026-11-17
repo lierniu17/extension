@@ -49,7 +49,12 @@ function ResultCard({ success, text, finalScript, children }: { success: boolean
 						{success ? 'Success' : 'Failed'}
 					</span>
 				</div>
-				{finalScript && <CopyButton text={finalScript} label="Copy Final Script" />}
+				{(text || finalScript) && (
+					<div className="flex shrink-0 items-center gap-1">
+						{text && <CopyButton text={text} label="Copy Result" />}
+						{finalScript && <CopyButton text={finalScript} label="Copy Final Script" />}
+					</div>
+				)}
 			</div>
 			<p className="text-[12px] text-foreground pl-5 min-w-0 max-w-full whitespace-pre-wrap wrap-anywhere break-all">
 				{text}
