@@ -1,4 +1,3 @@
-// TODO(types)
 import { FoldVertical, Plug, PlugZap, Square, UnfoldVertical, Unplug } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
@@ -15,7 +14,7 @@ export default function App() {
 	const { t } = useI18n()
 	const { status, history, activity, currentTask, config, execute, stop, configure } = useAgent()
 	const { wsState } = useHubWs(execute, stop, configure, config)
-	const historyRef = useRef<any>(null)
+	const historyRef = useRef<HTMLDivElement>(null)
 	useEffect(() => {
 		if (historyRef.current) {
 			historyRef.current.scrollTop = historyRef.current.scrollHeight
@@ -118,7 +117,7 @@ export default function App() {
 							</p>
 						</div>
 					)}
-					{history.map((event: any, index: any) => (
+					{history.map((event, index) => (
 						// eslint-disable-next-line react-x/no-array-index-key
 						<EventCard key={index} event={event} />
 					))}
@@ -137,7 +136,7 @@ function HubConfig() {
 			setAllowAll(r.allowAllHubConnection === true)
 		})
 	}, [])
-	const toggle = (checked: any) => {
+	const toggle = (checked: boolean) => {
 		setAllowAll(checked)
 		chrome.storage.local.set({ allowAllHubConnection: checked })
 	}
