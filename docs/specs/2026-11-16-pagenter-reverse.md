@@ -246,6 +246,8 @@
 
 ### 安全隐患记录（原样还原，之后另修）
 
+> 状态：除 localhost 放行本身按决定保留外，以下各项已于 2026-11-17 修复，见 `docs/specs/2026-11-17-pagenter-security-fixes.md`。
+
 - `externally_connectable` 放行 `http://localhost/*`：本机任意 localhost 页面都能向扩展发消息。
 - `handleApiCall` 会替页面带登录态发请求：需要核实来源校验是否足够严格。
 - 批次 4 还原时新发现（同样原样还原、之后另修）：
