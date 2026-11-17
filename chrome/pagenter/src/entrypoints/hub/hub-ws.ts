@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { callApiByProjectAndTool, callUpstreamMcpByName } from '@/agent/exposedApis'
 import { tAsync } from '@/i18n'
+import { parseHubPort } from '@/lib/hubPort'
 import { getApi, getLatestSpecByApi, listApisByProject, listProjects } from '@/lib/sniff/db'
 
 export class HubWs {
@@ -176,15 +177,17 @@ export class HubWs {
 }
 
 export function useHubWs(execute: any, stop: any, configure: any, config: any) {
-	const wsPort = new URLSearchParams(location.search).get('ws')
-	const [wsState, setWsState] = useState(() => (wsPort ? 'connecting' : 'disconnected'))
+	const wsPort = parseHubPort(new URLSearchParams(location.search).get('ws'))
+	// security fix: a port in the URL is only a proposal; connect after the user clicks Connect
+	const [connectRequested, setConnectRequested] = useState(false)
+	const [wsState, setWsState] = useState('disconnected')
 	const hubWsRef = useRef<any>(null)
 	const latest = useRef({ execute, stop, configure, config })
 	useEffect(() => {
 		latest.current = { execute, stop, configure, config }
 	})
 	useEffect(() => {
-		if (!wsPort) return
+		if (!wsPort || !connectRequested) return
 		const hubWs = new HubWs(
 			Number(wsPort),
 			{
@@ -268,6 +271,7 @@ export function useHubWs(execute: any, stop: any, configure: any, config: any) {
 			hubWs.disconnect()
 			hubWsRef.current = null
 		}
-	}, [wsPort])
-	return { wsState }
+	}, [wsPort, connectRequested])
+	const pendingPort = wsPort !== null && !connectRequested ? wsPort : null
+	return { wsState, pendingPort, connect: () => setConnectRequested(true) }
 }

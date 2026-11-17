@@ -9,12 +9,13 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { useI18n } from '@/i18n'
 
+import { HubConnectPrompt } from './HubConnectPrompt'
 import { useHubWs } from './hub-ws'
 
 export default function App() {
 	const { t } = useI18n()
 	const { status, history, activity, currentTask, config, execute, stop, configure } = useAgent()
-	const { wsState } = useHubWs(execute, stop, configure, config)
+	const { wsState, pendingPort, connect } = useHubWs(execute, stop, configure, config)
 	const historyRef = useRef<any>(null)
 	useEffect(() => {
 		if (historyRef.current) {
@@ -82,10 +83,14 @@ export default function App() {
 			<main className="flex-1 flex flex-col min-w-0 relative">
 				<MotionOverlay active={isRunning} />
 				<header className="flex items-center justify-between border-b px-5 h-12">
-					<div className="flex items-center gap-2 text-xs text-muted-foreground">
-						<WsIcon className="size-3.5" />
-						<span>{wsLabel}</span>
-					</div>
+					{pendingPort !== null ? (
+						<HubConnectPrompt port={pendingPort} onConnect={connect} />
+					) : (
+						<div className="flex items-center gap-2 text-xs text-muted-foreground">
+							<WsIcon className="size-3.5" />
+							<span>{wsLabel}</span>
+						</div>
+					)}
 					<div className="flex items-center gap-3">
 						<StatusDot status={status} />
 						{isRunning && (

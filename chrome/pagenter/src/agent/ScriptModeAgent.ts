@@ -7,6 +7,7 @@ import { cdpEval, wrapScriptForEval } from '@/lib/cdp'
 
 import { RemotePageController } from './RemotePageController'
 import { TabsController } from './TabsController'
+import { BridgeSessionReporter } from './bridgeSession'
 import { injectBridgeApis, probeBridgeAvailability } from './bridgeApis'
 import { createDebuggerTools } from './debuggerTools'
 import { applyConditionalBlock } from './promptUtils'
@@ -193,6 +194,8 @@ export class ScriptModeAgent extends PageAgentCore {
 				},
 			}),
 		}
+		// page bridge allowed in the task's tabs while it runs (security fix)
+		const bridgeSession = new BridgeSessionReporter()
 		let heartBeatInterval: number | null = null
 		super({
 			...config,
@@ -214,8 +217,10 @@ export class ScriptModeAgent extends PageAgentCore {
 					chrome.storage.local.set({ agentHeartbeat: Date.now() })
 				}, 1e3)
 				await chrome.storage.local.set({ isAgentRunning: true, agentMode: 'script' })
+				await bridgeSession.start(tabsController.tabs.map((t) => t.id))
 			},
 			onAfterTask: async () => {
+				bridgeSession.end()
 				if (heartBeatInterval) {
 					window.clearInterval(heartBeatInterval)
 					heartBeatInterval = null
@@ -223,10 +228,12 @@ export class ScriptModeAgent extends PageAgentCore {
 				await chrome.storage.local.set({ isAgentRunning: false, agentMode: null })
 			},
 			onBeforeStep: async () => {
+				bridgeSession.update(tabsController.tabs.map((t) => t.id))
 				if (!tabsController.currentTabId) return
 				await tabsController.waitUntilTabLoaded(tabsController.currentTabId)
 			},
 			onDispose: () => {
+				bridgeSession.end()
 				if (heartBeatInterval) {
 					window.clearInterval(heartBeatInterval)
 					heartBeatInterval = null

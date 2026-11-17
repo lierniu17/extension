@@ -1,5 +1,6 @@
 // TODO(types)
 import { ApiDetail } from '@/components/sniff/ApiDetail'
+import { EmptyOriginHint } from '@/components/sniff/EmptyOriginHint'
 import { useApiList } from '@/components/sniff/hooks'
 import { useI18n } from '@/i18n'
 import { getProject } from '@/lib/sniff/db'
@@ -71,6 +72,7 @@ export function ProjectDetail({ projectId, onBack }: any) {
 					</Button>
 				)}
 			</div>
+			<EmptyOriginHint originPatterns={project.originPatterns} />
 			<div className="flex border-b text-xs">
 				{['apis', 'settings'].map((k) => (
 					<button

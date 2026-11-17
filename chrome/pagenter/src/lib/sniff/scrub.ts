@@ -119,6 +119,55 @@ export function scrubHeaders(headers: Record<string, string>, options: ScrubOpti
 	return out
 }
 
+/**
+ * Scrub the query string of a URL with the body rules: a parameter whose name hits
+ * a key rule is redacted, other values are masked by the value rules. Parameters
+ * left unchanged keep their original encoding; the rest of the URL is untouched.
+ */
+export function scrubUrlQuery(url: string, options: ScrubOptions = {}) {
+	const queryStart = url.indexOf('?')
+	const hashStart = url.indexOf('#')
+	if (queryStart < 0 || (hashStart >= 0 && hashStart < queryStart)) return url
+	const queryEnd = hashStart < 0 ? url.length : hashStart
+	const rules = resolveRules(options)
+	const query = url
+		.slice(queryStart + 1, queryEnd)
+		.split('&')
+		.map((pair) => scrubQueryPair(pair, rules))
+		.join('&')
+	return `${url.slice(0, queryStart + 1)}${query}${url.slice(queryEnd)}`
+}
+
+function scrubQueryPair(pair: string, rules: ScrubRule[]) {
+	const eq = pair.indexOf('=')
+	if (eq < 0) {
+		const value = decodeQueryComponent(pair)
+		const next = applyValueRules(value, rules)
+		return next === value ? pair : encodeQueryComponent(next)
+	}
+	const rawKey = pair.slice(0, eq)
+	const key = decodeQueryComponent(rawKey)
+	const value = decodeQueryComponent(pair.slice(eq + 1))
+	const keyHit = rules.find(
+		(r) => (r.scope === 'key' || r.scope === 'both') && r.keyPattern?.test(key)
+	)
+	const next = keyHit ? applyFullReplace(value, keyHit) : applyValueRules(value, rules)
+	return next === value ? pair : `${rawKey}=${encodeQueryComponent(next)}`
+}
+
+function decodeQueryComponent(s: string) {
+	try {
+		return decodeURIComponent(s.replace(/\+/g, ' '))
+	} catch {
+		return s
+	}
+}
+
+/** Like encodeURIComponent, but keeps `[REDACTED:id]` markers readable. */
+function encodeQueryComponent(s: string) {
+	return encodeURIComponent(s).replace(/%5B/g, '[').replace(/%5D/g, ']').replace(/%3A/g, ':')
+}
+
 function resolveRules(options: ScrubOptions) {
 	const enabledIds = options.enabledRuleIds
 	const base = enabledIds
