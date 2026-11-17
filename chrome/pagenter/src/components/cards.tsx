@@ -1,4 +1,3 @@
-// TODO(types)
 import { javascript } from '@codemirror/lang-javascript'
 import { oneDark } from '@codemirror/theme-one-dark'
 import ReactCodeMirror from '@uiw/react-codemirror'
@@ -17,12 +16,15 @@ import {
 	Zap,
 } from 'lucide-react'
 import { Fragment, useState } from 'react'
+import type { ReactNode } from 'react'
 
-import type { AgentActivity, HistoricalEvent } from '@/core/types'
+import type { AgentReflection, AgentActivity, AgentErrorEvent, HistoricalEvent, ObservationEvent, RetryEvent, StepEvent, UserMessageEvent } from '@/core/types'
+import type { TipScriptProposal } from '@/agent/ScriptModeAgent'
+import type { ChatRequestBody, Message } from '@/llms'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 
-function ResultCard({ success, text, finalScript, children }: any) {
+function ResultCard({ success, text, finalScript, children }: { success: boolean; text: string; finalScript?: string | null; children?: ReactNode }) {
 	return (
 		<div
 			className={cn(
@@ -57,7 +59,7 @@ function ResultCard({ success, text, finalScript, children }: any) {
 	)
 }
 
-function ReflectionItem({ icon, value }: any) {
+function ReflectionItem({ icon, value }: { icon: ReactNode; value: ReactNode }) {
 	const [expanded, setExpanded] = useState(false)
 	return (
 		<Fragment>
@@ -75,8 +77,8 @@ function ReflectionItem({ icon, value }: any) {
 	)
 }
 
-function ReflectionSection({ reflection }: any) {
-	const joinList = (arr: any) => (arr && arr.length > 0 ? arr.join('; ') : void 0)
+function ReflectionSection({ reflection }: { reflection: AgentReflection }) {
+	const joinList = (arr: string[] | undefined) => (arr && arr.length > 0 ? arr.join('; ') : void 0)
 	const goalLine =
 		reflection.goal_status && reflection.goal_status !== 'on_track'
 			? `[${reflection.goal_status}]${reflection.active_goal ? ` ${reflection.active_goal}` : ''}`
@@ -100,7 +102,7 @@ function ReflectionSection({ reflection }: any) {
 	)
 }
 
-function ActionIcon({ name, className }: any) {
+function ActionIcon({ name, className }: { name: string; className?: string }) {
 	const icons: Record<string, React.ReactNode> = {
 		click_element: <Mouse className={className} />,
 		input: <Keyboard className={className} />,
@@ -110,7 +112,7 @@ function ActionIcon({ name, className }: any) {
 	return icons[name] || <Zap className={className} />
 }
 
-function CopyButton({ text, label }: any) {
+function CopyButton({ text, label }: { text: string; label: string }) {
 	const [copied, setCopied] = useState(false)
 	return (
 		<button
@@ -127,21 +129,21 @@ function CopyButton({ text, label }: any) {
 	)
 }
 
-function extractPrompt(rawRequest: any, role: any) {
-	const messages = rawRequest?.messages
+function extractPrompt(rawRequest: ChatRequestBody | undefined, role: Message['role']) {
+	const messages = rawRequest?.messages as Message[] | undefined
 	if (!messages) return null
 	const msg =
 		role === 'system'
-			? messages.find((m: any) => m.role === role)
-			: messages.findLast((m: any) => m.role === role)
+			? messages.find((m) => m.role === role)
+			: messages.findLast((m) => m.role === role)
 	if (!msg?.content) return null
 	return typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content, null, 2)
 }
 
-function RawSection({ rawRequest, rawResponse }: any) {
-	const [activeTab, setActiveTab] = useState<any>(null)
+function RawSection({ rawRequest, rawResponse }: { rawRequest?: ChatRequestBody; rawResponse?: unknown }) {
+	const [activeTab, setActiveTab] = useState<RawTab | null>(null)
 	if (!rawRequest && !rawResponse) return null
-	const handleTabClick = (tab: any) => {
+	const handleTabClick = (tab: RawTab) => {
 		setActiveTab(activeTab === tab ? null : tab)
 	}
 	const content =
@@ -196,7 +198,7 @@ function RawSection({ rawRequest, rawResponse }: any) {
 	)
 }
 
-function ScriptViewer({ code }: any) {
+function ScriptViewer({ code }: { code: string }) {
 	const [expanded, setExpanded] = useState(false)
 	const isDark = document.documentElement.classList.contains('dark')
 	if (!expanded) {
@@ -243,12 +245,12 @@ function ScriptViewer({ code }: any) {
 	)
 }
 
-function formatDuration(ms: any) {
+function formatDuration(ms: number) {
 	if (ms < 1e3) return `${ms}ms`
 	return `${(ms / 1e3).toFixed(1)}s`
 }
 
-function formatTime(iso: any) {
+function formatTime(iso: string) {
 	try {
 		return new Date(iso).toLocaleTimeString()
 	} catch {
@@ -256,11 +258,18 @@ function formatTime(iso: any) {
 	}
 }
 
-function StepCard({ event, onSaveAsTipScript }: any) {
+type RawTab = 'request' | 'response'
+
+type SaveAsTipScript = (proposal: TipScriptProposal) => void
+
+/** The save_as_tipscript / execute_javascript / done tool inputs this file reads. */
+type CardToolInput = Partial<TipScriptProposal> & { success?: boolean; text?: string }
+
+function StepCard({ event, onSaveAsTipScript }: { event: StepEvent; onSaveAsTipScript?: SaveAsTipScript }) {
 	const { t: t } = useI18n()
 	const scriptActions = ['execute_javascript', 'save_as_tipscript']
 	const hasScript = event.action && scriptActions.includes(event.action.name)
-	const scriptCode = hasScript ? event.action.input?.script : null
+	const scriptCode = hasScript ? (event.action.input as CardToolInput)?.script : null
 	return (
 		<div className="min-w-0 max-w-full rounded-lg border-l-2 border-l-blue-500/50 border bg-muted/40 p-2.5">
 			<div className="flex items-center justify-between mb-2">
@@ -314,7 +323,7 @@ function StepCard({ event, onSaveAsTipScript }: any) {
 								<button
 									type="button"
 									onClick={() => {
-										const input = event.action.input
+										const input = event.action.input as CardToolInput
 										onSaveAsTipScript({
 											name: input?.name || '',
 											description: input?.description || '',
@@ -338,7 +347,7 @@ function StepCard({ event, onSaveAsTipScript }: any) {
 	)
 }
 
-function ObservationCard({ event }: any) {
+function ObservationCard({ event }: { event: ObservationEvent }) {
 	return (
 		<div className="min-w-0 max-w-full rounded-lg border-l-2 border-l-green-500/50 border bg-muted/40 p-2.5">
 			<div className="flex min-w-0 items-start gap-2">
@@ -351,7 +360,7 @@ function ObservationCard({ event }: any) {
 	)
 }
 
-function RetryCard({ event }: any) {
+function RetryCard({ event }: { event: RetryEvent }) {
 	return (
 		<div className="min-w-0 max-w-full rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5">
 			<div className="flex min-w-0 items-start gap-1.5">
@@ -366,7 +375,7 @@ function RetryCard({ event }: any) {
 	)
 }
 
-function ErrorCard({ event }: any) {
+function ErrorCard({ event }: { event: AgentErrorEvent }) {
 	return (
 		<div className="min-w-0 max-w-full rounded-lg border border-destructive/30 bg-destructive/10 p-2.5">
 			<div className="flex min-w-0 items-start gap-1.5">
@@ -380,7 +389,7 @@ function ErrorCard({ event }: any) {
 	)
 }
 
-function UserMessageCard({ event }: any) {
+function UserMessageCard({ event }: { event: UserMessageEvent }) {
 	return (
 		<div className="flex min-w-0 items-start gap-2 justify-end">
 			<div className="min-w-0 max-w-[85%] rounded-lg bg-primary/10 border border-primary/20 px-3 py-2">
@@ -395,9 +404,9 @@ function UserMessageCard({ event }: any) {
 	)
 }
 
-export function EventCard({ event, onSaveAsTipScript, finalScript }: any) {
+export function EventCard({ event, onSaveAsTipScript, finalScript }: { event: HistoricalEvent; onSaveAsTipScript?: SaveAsTipScript; finalScript?: string | null }) {
 	if (event.type === 'step' && event.action?.name === 'done') {
-		const input = event.action.input
+		const input = event.action.input as CardToolInput
 		return (
 			<>
 				<StepCard event={event} onSaveAsTipScript={onSaveAsTipScript} />
@@ -427,7 +436,7 @@ export function EventCard({ event, onSaveAsTipScript, finalScript }: any) {
 	return null
 }
 
-export function ActivityCard({ activity }: any) {
+export function ActivityCard({ activity }: { activity: AgentActivity }) {
 	const { t: t } = useI18n()
 	const getActivityInfo = () => {
 		switch (activity.type) {

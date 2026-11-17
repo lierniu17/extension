@@ -398,12 +398,12 @@ export default function App() {
 					>
 						{showEmptyState && <EmptyState />}
 						{history.map((event: any, index: any) => {
-							let finalScript = null
+							let finalScript: string | null = null
 							if (event.type === 'step' && event.action?.name === 'done') {
 								for (let i = index - 1; i >= 0; i--) {
 									const prev = history[i]
 									if (prev.type === 'step' && prev.action?.name === 'execute_javascript') {
-										finalScript = prev.action?.input?.script ?? null
+										finalScript = (prev.action?.input?.script as string | undefined) ?? null
 										break
 									}
 								}

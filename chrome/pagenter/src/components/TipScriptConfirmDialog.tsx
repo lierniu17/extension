@@ -1,4 +1,3 @@
-// TODO(types)
 import ReactCodeMirror from '@uiw/react-codemirror'
 import { useI18n } from '@/i18n'
 import { Plus, Save, X } from 'lucide-react'
@@ -8,7 +7,9 @@ import { oneDark } from '@codemirror/theme-one-dark'
 import { Button } from '@/components/ui/button'
 import { useState } from 'react'
 
-export function TipScriptConfirmDialog({ proposal, onConfirm, onDismiss }: any) {
+import type { TipScriptProposal } from '@/agent/ScriptModeAgent'
+
+export function TipScriptConfirmDialog({ proposal, onConfirm, onDismiss }: { proposal: TipScriptProposal; onConfirm: (edited: TipScriptProposal) => void; onDismiss: () => void }) {
 	const { t } = useI18n()
 	const [name, setName] = useState(proposal.name)
 	const [description, setDescription] = useState(proposal.description)
@@ -68,7 +69,7 @@ export function TipScriptConfirmDialog({ proposal, onConfirm, onDismiss }: any) 
 						<label className="text-xs font-medium text-foreground">
 							{t('tipScript.dialog.urlPatterns')}
 						</label>
-						{urlPatterns.map((pattern: any, idx: any) => (
+						{urlPatterns.map((pattern, idx) => (
 							<div key={idx} className="flex gap-1.5 items-center">
 								<Input
 									value={pattern}
@@ -83,7 +84,7 @@ export function TipScriptConfirmDialog({ proposal, onConfirm, onDismiss }: any) 
 								{urlPatterns.length > 1 && (
 									<button
 										type="button"
-										onClick={() => setUrlPatterns(urlPatterns.filter((_: any, i: any) => i !== idx))}
+										onClick={() => setUrlPatterns(urlPatterns.filter((_, i) => i !== idx))}
 										className="text-muted-foreground hover:text-destructive cursor-pointer shrink-0"
 									>
 										<X className="size-3.5" />
@@ -107,7 +108,7 @@ export function TipScriptConfirmDialog({ proposal, onConfirm, onDismiss }: any) 
 						</label>
 						<select
 							value={triggerMode}
-							onChange={(e) => setTriggerMode(e.target.value)}
+							onChange={(e) => setTriggerMode(e.target.value as TipScriptProposal['triggerMode'])}
 							className="w-full h-8 text-sm rounded-lg border border-input bg-background px-2 cursor-pointer"
 						>
 							<option value="manual">{t('tipScript.dialog.triggerMode.manual')}</option>

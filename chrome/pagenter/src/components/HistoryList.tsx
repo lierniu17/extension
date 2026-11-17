@@ -1,11 +1,13 @@
-// TODO(types)
 import { clearSessions, deleteSession, listSessions } from '@/lib/db'
 import { downloadHistoryExport } from '@/lib/history-export'
 import { Button } from '@/components/ui/button'
 import { ArrowDownToLine, ArrowLeft, CircleCheckBig, CircleX, RotateCcw, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
+import type { MouseEvent } from 'react'
 
-function timeAgo(ts: any) {
+import type { SessionRecord } from '@/lib/dbSchema'
+
+function timeAgo(ts: number) {
 	const seconds = Math.floor((Date.now() - ts) / 1e3)
 	if (seconds < 60) return 'just now'
 	const minutes = Math.floor(seconds / 60)
@@ -16,8 +18,8 @@ function timeAgo(ts: any) {
 	return `${days}d ago`
 }
 
-export function HistoryList({ onSelect, onBack, onRerun }: any) {
-	const [sessions, setSessions] = useState<any[]>([])
+export function HistoryList({ onSelect, onBack, onRerun }: { onSelect: (id: string) => void; onBack: () => void; onRerun: (task: string) => void }) {
+	const [sessions, setSessions] = useState<SessionRecord[]>([])
 	const [loading, setLoading] = useState(true)
 	const load = useCallback(async () => {
 		setSessions(await listSessions())
@@ -26,16 +28,16 @@ export function HistoryList({ onSelect, onBack, onRerun }: any) {
 	useEffect(() => {
 		load()
 	}, [load])
-	const handleDelete = async (e: any, id: any) => {
+	const handleDelete = async (e: MouseEvent, id: string) => {
 		e.stopPropagation()
 		await deleteSession(id)
 		setSessions((prev) => prev.filter((s) => s.id !== id))
 	}
-	const handleExport = (e: any, session: any) => {
+	const handleExport = (e: MouseEvent, session: SessionRecord) => {
 		e.stopPropagation()
 		downloadHistoryExport(session.task, session.createdAt, session.history)
 	}
-	const handleRerun = (e: any, task: any) => {
+	const handleRerun = (e: MouseEvent, task: string) => {
 		e.stopPropagation()
 		onRerun(task)
 	}
