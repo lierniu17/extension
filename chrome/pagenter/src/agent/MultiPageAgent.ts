@@ -3,6 +3,7 @@ import type { AgentConfig } from '@/core/types'
 
 import { RemotePageController } from './RemotePageController'
 import { TabsController } from './TabsController'
+import { BridgeSessionReporter } from './bridgeSession'
 import { injectBridgeApis, probeBridgeAvailability } from './bridgeApis'
 import { createDebuggerTools } from './debuggerTools'
 import { applyConditionalBlock } from './promptUtils'
@@ -36,6 +37,8 @@ export class MultiPageAgent extends PageAgentCore {
 		const systemPrompt = injectBridgeApis(promptTemplate)
 		const includeInitialTab = config.includeInitialTab ?? true
 		const experimentalIncludeAllTabs = config.experimentalIncludeAllTabs ?? false
+		// page bridge allowed in the task's tabs while it runs (security fix)
+		const bridgeSession = new BridgeSessionReporter()
 		let heartBeatInterval: number | null = null
 		super({
 			...config,
@@ -61,8 +64,10 @@ export class MultiPageAgent extends PageAgentCore {
 					isAgentRunning: true,
 					agentMode: 'normal',
 				})
+				await bridgeSession.start(tabsController.tabs.map((t) => t.id))
 			},
 			onAfterTask: async () => {
+				bridgeSession.end()
 				if (heartBeatInterval) {
 					window.clearInterval(heartBeatInterval)
 					heartBeatInterval = null
@@ -73,10 +78,12 @@ export class MultiPageAgent extends PageAgentCore {
 				})
 			},
 			onBeforeStep: async (agent) => {
+				bridgeSession.update(tabsController.tabs.map((t) => t.id))
 				if (!tabsController.currentTabId) return
 				await tabsController.waitUntilTabLoaded(tabsController.currentTabId)
 			},
 			onDispose: () => {
+				bridgeSession.end()
 				if (heartBeatInterval) {
 					window.clearInterval(heartBeatInterval)
 					heartBeatInterval = null

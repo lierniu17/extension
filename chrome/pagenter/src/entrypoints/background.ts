@@ -4,6 +4,11 @@
 // TipScript execution, the page-bridge channels (APIs, MCP, LLM, KV) and Hub
 // launching.
 import { resolveLlmConfig } from '@/agent/constants'
+import {
+	authorizeBridgeCall,
+	runWithTipScriptSession,
+	setupBridgeSessionPort,
+} from '@/agent/bridgeSession.background'
 import { handleApiCall, handleApiList, handleMcpCall } from '@/agent/exposedApis'
 import { handlePageControlMessage } from '@/agent/RemotePageController.background'
 import { handleTabControlMessage, setupTabEventsPort } from '@/agent/TabsController.background'
@@ -99,6 +104,10 @@ export default defineBackground(() => {
 
 	setupTabEventsPort()
 
+	// tabs with a running agent task (page-bridge authorization)
+
+	setupBridgeSessionPort()
+
 	// stop recording when the recorded tab closes
 
 	chrome.tabs.onRemoved.addListener((tabId) => {
@@ -108,17 +117,28 @@ export default defineBackground(() => {
 	// message proxy
 
 	chrome.runtime.onMessage.addListener((message, sender, sendResponse): true | undefined => {
+		// page bridge: only from a tab with a running agent task or TipScript, else reject at once
+		let bridgeSessionId: string | null = null
+		if (typeof message.type === 'string' && message.type.startsWith('PAGENTER_')) {
+			const auth = authorizeBridgeCall(sender)
+			if (!auth.ok) {
+				sendResponse({ error: auth.error })
+				return
+			}
+			bridgeSessionId = auth.sessionId
+		}
 		if (message.type === 'TAB_CONTROL') {
 			return handleTabControlMessage(message, sender, sendResponse)
 		} else if (message.type === 'PAGE_CONTROL') {
 			return handlePageControlMessage(message, sender, sendResponse)
 		} else if (message.type === 'TIPSCRIPT_EXECUTE') {
-			const tabId = message.tabId ?? sender.tab?.id
+			// a content script's own tab wins over any id in the message
+			const tabId = sender.tab?.id ?? message.tabId
 			if (!tabId) {
 				sendResponse({ error: 'No tabId available' })
 				return
 			}
-			handleTipScriptExecute(tabId, message.script)
+			runWithTipScriptSession(tabId, () => handleTipScriptExecute(tabId, message.script))
 				.then((result) => sendResponse({ ok: true, result }))
 				.catch((err) => sendResponse({ error: String(err) }))
 			return true
@@ -191,7 +211,7 @@ export default defineBackground(() => {
 			message.type === 'PAGENTER_KV_LIST' ||
 			message.type === 'PAGENTER_KV_DELETE'
 		) {
-			handleKvCall(message.type, message.payload).then(sendResponse)
+			handleKvCall(message.type, message.payload, bridgeSessionId).then(sendResponse)
 			return true
 		} else {
 			sendResponse({ error: 'Unknown message type' })
@@ -334,10 +354,11 @@ async function handleLlmCall(payload: any) {
 
 // ---- page bridge: KV ----
 
-/** `window.__pagenter.kv.*`: scoped to the agent session that ran last (`lastSessionId`). */
-async function handleKvCall(type: string, payload: any) {
-	const storage = await chrome.storage.local.get('lastSessionId')
-	const sessionId = storage.lastSessionId as string | undefined
+/**
+ * `window.__pagenter.kv.*`: scoped to the session of the calling tab, as decided by
+ * authorizeBridgeCall (the agent task's session, or the tab's TipScript session).
+ */
+async function handleKvCall(type: string, payload: any, sessionId: string | null) {
 	if (!sessionId) {
 		return {
 			error:
