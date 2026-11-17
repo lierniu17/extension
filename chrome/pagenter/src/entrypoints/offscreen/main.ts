@@ -1,8 +1,8 @@
-// TODO(types)
 // Offscreen document: hosts the Sniff analyzer (Schema inference + IndexedDB
 // writes) so the work survives the service worker going idle. The background
 // forwards every recorded sample here as SNIFF_SAMPLE_INGEST.
 import { ingestSample } from '@/lib/sniff/analyzer'
+import type { SniffSample } from '@/lib/dbSchema'
 
 chrome.runtime.onMessage.addListener(
 	(message: unknown, _sender, sendResponse): true | undefined => {
@@ -28,7 +28,7 @@ setInterval(() => {
 
 console.log('[Sniff/offscreen] ready at', new Date().toISOString())
 
-function isSniffMessage(m: unknown): m is { type: string; sample?: any } {
+function isSniffMessage(m: unknown): m is { type: string; sample: SniffSample } {
 	if (!m || typeof m !== 'object') return false
 	const t = (m as { type?: unknown }).type
 	return t === 'SNIFF_SAMPLE_INGEST' || t === 'SNIFF_ANALYZE_TRIGGER'

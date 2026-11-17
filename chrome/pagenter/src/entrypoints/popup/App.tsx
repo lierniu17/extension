@@ -1,15 +1,15 @@
-// TODO(types)
 import { useI18n } from '@/i18n'
 import { getMatchingTipScripts } from '@/lib/db'
 import { Button } from '@/components/ui/button'
 import { ExternalLink, PanelRight, Play, Settings, Zap } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import type { TipScriptRecord } from '@/lib/dbSchema'
 
 export default function App() {
 	const { t } = useI18n()
-	const [tipScripts, setTipScripts] = useState<any[]>([])
+	const [tipScripts, setTipScripts] = useState<TipScriptRecord[]>([])
 	const [currentUrl, setCurrentUrl] = useState('')
-	const [runningId, setRunningId] = useState<any>(null)
+	const [runningId, setRunningId] = useState<string | null>(null)
 	useEffect(() => {
 		chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
 			const url = tab?.url || ''
@@ -19,7 +19,7 @@ export default function App() {
 			}
 		})
 	}, [])
-	const handleRun = async (mz: any) => {
+	const handleRun = async (mz: TipScriptRecord) => {
 		const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
 		if (!tab?.id) return
 		setRunningId(mz.id)
