@@ -1,6 +1,7 @@
-// TODO(types)
 import { initPageController } from '@/agent/RemotePageController.content'
 import { activate, deactivate } from '@/lib/elementPicker'
+import type { TipScriptRecord } from '@/lib/dbSchema'
+import type { BridgeResponse } from '@/lib/messages'
 
 const DEBUG_PREFIX = '[Content]'
 
@@ -33,10 +34,10 @@ export default defineContentScript({
 				type: 'TIPSCRIPT_QUERY',
 				url: window.location.href,
 			})
-			.then(async (response: any) => {
+			.then(async (response: { scripts?: TipScriptRecord[]; error?: string } | undefined) => {
 				if (!response?.scripts?.length) return
 				const autoScripts = response.scripts.filter(
-					(mz: any) => mz.triggerMode === 'auto' && mz.enabled
+					(mz) => mz.triggerMode === 'auto' && mz.enabled
 				)
 				if (!autoScripts.length) return
 
@@ -108,7 +109,7 @@ function exposePagenterBridge() {
 
 		const { id, payload } = data
 		try {
-			const result: any = await chrome.runtime.sendMessage({
+			const result: BridgeResponse | undefined = await chrome.runtime.sendMessage({
 				type: msgType,
 				payload,
 			})
