@@ -141,6 +141,8 @@ export const en: Record<string, string> = {
 	'hub.ws.connecting': 'Connecting…',
 	'hub.ws.disconnected': 'Disconnected',
 	'hub.ws.noConnection': 'No connection',
+	'hub.ws.pending': 'Waiting to connect to ws://localhost:{port}',
+	'hub.ws.connect': 'Connect',
 	'hub.stop': 'Stop',
 	'hub.currentTask': 'Current Task',
 	'hub.empty.waiting': 'Waiting for task from external caller…',

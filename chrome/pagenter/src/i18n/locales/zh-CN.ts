@@ -137,6 +137,8 @@ export const zhCN: Record<string, string> = {
 	'hub.ws.connecting': '连接中…',
 	'hub.ws.disconnected': '已断开',
 	'hub.ws.noConnection': '未连接',
+	'hub.ws.pending': '待连接 ws://localhost:{port}',
+	'hub.ws.connect': '连接',
 	'hub.stop': '停止',
 	'hub.currentTask': '当前任务',
 	'hub.empty.waiting': '等待外部调用方下发任务…',

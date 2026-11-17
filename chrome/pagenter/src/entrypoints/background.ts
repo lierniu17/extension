@@ -8,6 +8,7 @@ import { handleApiCall, handleApiList, handleMcpCall } from '@/agent/exposedApis
 import { handlePageControlMessage } from '@/agent/RemotePageController.background'
 import { handleTabControlMessage, setupTabEventsPort } from '@/agent/TabsController.background'
 import { cdpSend, handleCdpProxyMessage, wrapScriptForEval } from '@/lib/cdp'
+import { parseHubPort } from '@/lib/hubPort'
 import { cleanupOrphanKv, kvDelete, kvGet, kvList, kvSet } from '@/lib/kvStore'
 import { getProject, updateProject } from '@/lib/sniff/db'
 import { NetworkRecorder } from '@/lib/sniff/networkRecorder'
@@ -203,11 +204,17 @@ export default defineBackground(() => {
 	chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch(() => {})
 
 	// external messages (from localhost launcher page via externally_connectable)
-	// Security note (spec 补充说明): any http://localhost page can send these. Restored as-is.
+	// Security note (spec 补充说明): any http://localhost page can send these. OPEN_HUB only
+	// opens the Hub with a valid port; the user confirms the connection in the Hub.
 
 	chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
 		if (message.type === 'OPEN_HUB') {
-			openOrFocusHubTab(message.wsPort).then(() => {
+			const wsPort = parseHubPort(message.wsPort)
+			if (wsPort === null) {
+				sendResponse({ ok: false, error: 'wsPort must be an integer from 1 to 65535' })
+				return
+			}
+			openOrFocusHubTab(wsPort).then(() => {
 				if (sender.tab?.id) chrome.tabs.remove(sender.tab.id)
 				sendResponse({ ok: true })
 			})
