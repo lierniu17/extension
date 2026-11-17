@@ -1,11 +1,11 @@
-// TODO(types)
 import { getApi, getLatestSpecByApi, listApisByProject, listProjects, listSamplesByApi } from '@/lib/sniff/db'
 import { useEffect, useState } from 'react'
+import type { SniffApi, SniffProject, SniffSample, SniffSpec } from '@/lib/dbSchema'
 
 const POLL_INTERVAL_MS = 1e3
 
 export function useProjectList() {
-	const [projects, setProjects] = useState<any[]>([])
+	const [projects, setProjects] = useState<SniffProject[]>([])
 	const [loading, setLoading] = useState(true)
 	const [seed, setSeed] = useState(0)
 	useEffect(() => {
@@ -27,8 +27,8 @@ export function useProjectList() {
 	return { projects, loading, refresh: () => setSeed((x) => x + 1) }
 }
 
-export function useApiList(projectId: any) {
-	const [apis, setApis] = useState<any[]>([])
+export function useApiList(projectId: string | null) {
+	const [apis, setApis] = useState<SniffApi[]>([])
 	const [loading, setLoading] = useState(true)
 	useEffect(() => {
 		let cancelled = false
@@ -56,10 +56,10 @@ export function useApiList(projectId: any) {
 	return { apis, loading }
 }
 
-export function useApiDetail(apiId: any) {
-	const [api, setApi] = useState<any>(null)
-	const [spec, setSpec] = useState<any>(null)
-	const [samples, setSamples] = useState<any[]>([])
+export function useApiDetail(apiId: string | null) {
+	const [api, setApi] = useState<SniffApi | null>(null)
+	const [spec, setSpec] = useState<SniffSpec | null>(null)
+	const [samples, setSamples] = useState<SniffSample[]>([])
 	const [loading, setLoading] = useState(true)
 	const [seed, setSeed] = useState(0)
 	useEffect(() => {

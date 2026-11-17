@@ -1,4 +1,3 @@
-// TODO(types)
 import { useEffect, useState } from 'react'
 import {
 	ChevronDown,
@@ -16,8 +15,17 @@ import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { useI18n } from '@/i18n'
 import { probeCapabilities } from '@/llms'
+import type { ProbeCheck, ProbeResult } from '@/llms/probe'
+import type { AgentUiConfig } from '@/agent/useAgent'
+import type { SupportedLanguage } from '@/core/types'
 
-function stringifyProbeValue(value: any) {
+type SaveState =
+	| { kind: 'idle' }
+	| { kind: 'probing' }
+	| { kind: 'error'; error: string }
+	| { kind: 'success'; probe: ProbeResult }
+
+function stringifyProbeValue(value: unknown) {
 	if (value == null) return ''
 	if (typeof value === 'string') return value
 	if (typeof value === 'number' || typeof value === 'boolean') return String(value)
@@ -28,9 +36,14 @@ function stringifyProbeValue(value: any) {
 	}
 }
 
-function CapabilityRow({ name, probe, fallback, manualInput }: any) {
+function CapabilityRow({ name, probe, fallback, manualInput }: {
+	name: string
+	probe: ProbeCheck<unknown>
+	fallback?: number
+	manualInput?: { value: string; onChange: (value: string) => void }
+}) {
 	const { t } = useI18n()
-	const [showDetail, setShowDetail] = useState<any>(false)
+	const [showDetail, setShowDetail] = useState<boolean>(false)
 	const labelKey = `general.capability.${name}.label`
 	const stateKey = probe.inconclusive
 		? `general.capability.${name}.inconclusive`
@@ -69,7 +82,7 @@ function CapabilityRow({ name, probe, fallback, manualInput }: any) {
 					<button
 						type="button"
 						className="flex items-center gap-1 text-xs underline opacity-70 hover:opacity-100 cursor-pointer"
-						onClick={() => setShowDetail((v: any) => !v)}
+						onClick={() => setShowDetail((v) => !v)}
 					>
 						{showDetail ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
 						{t('general.capability.common.toggleDetail')}
@@ -122,18 +135,18 @@ function CapabilityRow({ name, probe, fallback, manualInput }: any) {
 
 const CONTEXT_LENGTH_FALLBACK = 32e3
 
-function parseManualContextLength(raw: any) {
+function parseManualContextLength(raw: string) {
 	const n = Number.parseInt(raw.trim(), 10)
 	if (!Number.isFinite(n) || n <= 0) return undefined
 	return n
 }
 
-function resolveSupportsVision(probe: any, previous: any) {
+function resolveSupportsVision(probe: ProbeResult, previous: boolean | undefined) {
 	if (probe.vision.inconclusive) return previous
 	return probe.vision.supported
 }
 
-function resolveContextLength(probe: any, manualRaw: any) {
+function resolveContextLength(probe: ProbeResult, manualRaw: string) {
 	if (
 		probe.contextLength.supported &&
 		probe.contextLength.value !== null &&
@@ -144,21 +157,21 @@ function resolveContextLength(probe: any, manualRaw: any) {
 	return parseManualContextLength(manualRaw)
 }
 
-const CAPABILITY_RENDER_ORDER = ['tokenParam', 'vision', 'contextLength']
+const CAPABILITY_RENDER_ORDER = ['tokenParam', 'vision', 'contextLength'] as const
 
-export function GeneralSection({ config, onSave }: any) {
+export function GeneralSection({ config, onSave }: { config: AgentUiConfig | null; onSave: (config: AgentUiConfig) => Promise<void> }) {
 	const { t } = useI18n()
-	const [baseURL, setBaseURL] = useState<any>(config?.baseURL ?? '')
-	const [model, setModel] = useState<any>(config?.model ?? '')
-	const [apiKey, setApiKey] = useState<any>(config?.apiKey ?? '')
-	const [language, setLanguage] = useState<any>(config?.language ?? 'zh-CN')
-	const [tempEnabled, setTempEnabled] = useState<any>(
+	const [baseURL, setBaseURL] = useState<string>(config?.baseURL ?? '')
+	const [model, setModel] = useState<string>(config?.model ?? '')
+	const [apiKey, setApiKey] = useState<string>(config?.apiKey ?? '')
+	const [language, setLanguage] = useState<SupportedLanguage | undefined>(config?.language ?? 'zh-CN')
+	const [tempEnabled, setTempEnabled] = useState<boolean>(
 		config?.temperature !== null && config?.temperature !== undefined
 	)
-	const [tempValue, setTempValue] = useState<any>(config?.temperature ?? 0.7)
-	const [showApiKey, setShowApiKey] = useState<any>(false)
-	const [saveState, setSaveState] = useState<any>({ kind: 'idle' })
-	const [manualContextLength, setManualContextLength] = useState<any>(
+	const [tempValue, setTempValue] = useState<number>(config?.temperature ?? 0.7)
+	const [showApiKey, setShowApiKey] = useState<boolean>(false)
+	const [saveState, setSaveState] = useState<SaveState>({ kind: 'idle' })
+	const [manualContextLength, setManualContextLength] = useState<string>(
 		config?.contextLength !== null && config?.contextLength !== undefined
 			? String(config.contextLength)
 			: ''
@@ -267,7 +280,7 @@ export function GeneralSection({ config, onSave }: any) {
 					</label>
 					<select
 						value={language ?? ''}
-						onChange={(e) => setLanguage(e.target.value || undefined)}
+						onChange={(e) => setLanguage((e.target.value || undefined) as SupportedLanguage | undefined)}
 						className="w-full h-10 text-base rounded-lg border border-input bg-background px-3 cursor-pointer"
 					>
 						<option value="">{t('general.responseLanguage.system')}</option>

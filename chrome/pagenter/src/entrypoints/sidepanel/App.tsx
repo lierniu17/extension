@@ -1,4 +1,3 @@
-// TODO(types)
 import { useI18n } from '@/i18n'
 import { useAgent } from '@/agent/useAgent'
 import { listTipScripts } from '@/lib/db'
@@ -33,13 +32,36 @@ import {
 	InputGroupTextarea,
 } from '@/components/ui/input-group'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
+
+type PanelView = { name: 'chat' } | { name: 'history' } | { name: 'history-detail'; sessionId: string }
+
+/** What the element picker sends (see `@/lib/elementPicker`); only the fields read here. */
+interface PickedElementData {
+	tagName: string
+	id: string
+	classList: string[]
+	cssSelector: string
+	xpath: string
+}
+
+/** Runtime messages the picker listener looks at; anything else falls through both checks. */
+type PickerMessage =
+	| { type: 'ELEMENT_PICKED'; data: PickedElementData }
+	| { type: 'ELEMENT_PICKER_STOPPED'; reason?: string }
+
+interface TipScriptListItem {
+	id: string
+	name: string
+	script: string
+}
 
 export default function App() {
 	const { t } = useI18n()
-	const [view, setView] = useState<any>({ name: 'chat' })
+	const [view, setView] = useState<PanelView>({ name: 'chat' })
 	const [inputValue, setInputValue] = useState('')
-	const historyRef = useRef<any>(null)
-	const textareaRef = useRef<any>(null)
+	const historyRef = useRef<HTMLDivElement>(null)
+	const textareaRef = useRef<HTMLTextAreaElement>(null)
 	const {
 		status,
 		history,
@@ -71,7 +93,7 @@ export default function App() {
 		return () => window.removeEventListener('pagenter:session-sync', onRemoteSync)
 	}, [])
 	const runTask = useCallback(
-		(task: any) => {
+		(task: string) => {
 			const normalizedTask = task.trim()
 			if (!normalizedTask || status === 'running') return
 			setInputValue('')
@@ -83,7 +105,7 @@ export default function App() {
 		[execute, status]
 	)
 	const handleSubmit = useCallback(
-		(e?: any) => {
+		(e?: { preventDefault(): void }) => {
 			e?.preventDefault()
 			runTask(inputValue)
 		},
@@ -93,7 +115,7 @@ export default function App() {
 		console.log('[SidePanel] Stopping task...')
 		stop()
 	}, [stop])
-	const handleKeyDown = (e: any) => {
+	const handleKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
 		if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
 			e.preventDefault()
 			handleSubmit()
@@ -125,12 +147,12 @@ export default function App() {
 		}
 	}, [])
 	const [picking, setPicking] = useState(false)
-	const pickingTabIdRef = useRef<any>(null)
+	const pickingTabIdRef = useRef<number | null>(null)
 	const tRef = useRef(t)
 	useEffect(() => {
 		tRef.current = t
 	})
-	const startPickerOn = useCallback(async (tabId: any) => {
+	const startPickerOn = useCallback(async (tabId: number) => {
 		try {
 			await chrome.tabs.sendMessage(tabId, {
 				type: 'ELEMENT_PICKER',
@@ -142,7 +164,7 @@ export default function App() {
 			})
 		} catch {}
 	}, [])
-	const stopPickerOn = useCallback(async (tabId: any) => {
+	const stopPickerOn = useCallback(async (tabId: number) => {
 		try {
 			await chrome.tabs.sendMessage(tabId, {
 				type: 'ELEMENT_PICKER',
@@ -171,7 +193,7 @@ export default function App() {
 	}, [picking, startPickerOn, stopPickerOn])
 	useEffect(() => {
 		if (!picking) return
-		const onMessage = (message: any) => {
+		const onMessage = (message: PickerMessage) => {
 			if (message.type === 'ELEMENT_PICKED') {
 				const { addPickedElement: addPickedElement2, setInputValue: setInputValue2 } =
 					handlersRef.current
@@ -195,7 +217,7 @@ export default function App() {
 			}
 		}
 		chrome.runtime.onMessage.addListener(onMessage)
-		const onTabActivated = async (info: any) => {
+		const onTabActivated = async (info: chrome.tabs.OnActivatedInfo) => {
 			const prev = pickingTabIdRef.current
 			if (prev != null && prev !== info.tabId) {
 				await stopPickerOn(prev)
@@ -204,7 +226,7 @@ export default function App() {
 			await startPickerOn(info.tabId)
 		}
 		chrome.tabs.onActivated.addListener(onTabActivated)
-		const onEsc = (e: any) => {
+		const onEsc = (e: KeyboardEvent) => {
 			if (e.key !== 'Escape') return
 			if (pickingTabIdRef.current != null) {
 				stopPickerOn(pickingTabIdRef.current)
@@ -220,7 +242,7 @@ export default function App() {
 		}
 	}, [picking, startPickerOn, stopPickerOn])
 	useEffect(() => {
-		const handler = (e: any) => {
+		const handler = (e: KeyboardEvent) => {
 			if (e.key === 'b' && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
 				e.preventDefault()
 				handleElementPick()
@@ -230,14 +252,14 @@ export default function App() {
 		return () => window.removeEventListener('keydown', handler)
 	}, [handleElementPick])
 	const [showScriptPicker, setShowScriptPicker] = useState(false)
-	const [tipScriptList, setTipScriptList] = useState<any>([])
+	const [tipScriptList, setTipScriptList] = useState<TipScriptListItem[]>([])
 	const handleOpenScriptPicker = useCallback(async () => {
 		const scripts = await listTipScripts()
 		setTipScriptList(scripts.map((s) => ({ id: s.id, name: s.name, script: s.script })))
 		setShowScriptPicker(true)
 	}, [])
 	const handleSelectScript = useCallback(
-		(item: any) => {
+		(item: TipScriptListItem) => {
 			setAttachedScript({ name: item.name, content: item.script })
 			setShowScriptPicker(false)
 		},
@@ -249,7 +271,7 @@ export default function App() {
 		chrome.storage.local.get('developerMode').then((r) => {
 			setDeveloperMode(!!r.developerMode)
 		})
-		const listener = (changes: any) => {
+		const listener = (changes: Record<string, chrome.storage.StorageChange>) => {
 			if (changes.developerMode) setDeveloperMode(!!changes.developerMode.newValue)
 		}
 		chrome.storage.local.onChanged.addListener(listener)
@@ -264,7 +286,7 @@ export default function App() {
 	if (view.name === 'history') {
 		return (
 			<HistoryList
-				onSelect={(id: any) => setView({ name: 'history-detail', sessionId: id })}
+				onSelect={(id: string) => setView({ name: 'history-detail', sessionId: id })}
 				onBack={() => setView({ name: 'chat' })}
 				onRerun={runTask}
 			/>
@@ -397,13 +419,13 @@ export default function App() {
 						className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-3 space-y-2"
 					>
 						{showEmptyState && <EmptyState />}
-						{history.map((event: any, index: any) => {
-							let finalScript = null
+						{history.map((event, index) => {
+							let finalScript: string | null = null
 							if (event.type === 'step' && event.action?.name === 'done') {
 								for (let i = index - 1; i >= 0; i--) {
 									const prev = history[i]
 									if (prev.type === 'step' && prev.action?.name === 'execute_javascript') {
-										finalScript = prev.action?.input?.script ?? null
+										finalScript = (prev.action?.input?.script as string | undefined) ?? null
 										break
 									}
 								}
@@ -454,7 +476,7 @@ export default function App() {
 									{t('panel.noTipScripts')}
 								</div>
 							) : (
-								tipScriptList.map((item: any) => (
+								tipScriptList.map((item) => (
 									<button
 										key={item.id}
 										type="button"

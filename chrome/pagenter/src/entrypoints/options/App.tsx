@@ -1,4 +1,3 @@
-// TODO(types)
 import { useCallback, useEffect, useState } from 'react'
 import { Globe, Info, X } from 'lucide-react'
 import { useI18n, type Locale } from '@/i18n'
@@ -10,6 +9,9 @@ import { GeneralSection } from './sections/GeneralSection'
 import { HubSection } from './sections/HubSection'
 import { SniffSection } from './sections/SniffSection'
 import { TipScriptSection } from './sections/TipScriptSection'
+import type { AgentUiConfig } from '@/agent/useAgent'
+import type { StoredAdvancedConfig } from '@/agent/constants'
+import type { SupportedLanguage } from '@/core/types'
 
 const SECTION_IDS = ['general', 'advanced', 'tipScript', 'hub', 'sniff', 'about']
 
@@ -19,12 +21,12 @@ function sectionFromHash() {
 }
 
 function useExtConfig() {
-	const [config, setConfig] = useState<any>(null)
+	const [config, setConfig] = useState<AgentUiConfig | null>(null)
 	useEffect(() => {
 		chrome.storage.local.get(['llmConfig', 'language', 'advancedConfig']).then((result) => {
 			const llmConfig = resolveLlmConfig(result.llmConfig)
-			const language = result.language || 'zh-CN'
-			const stored = result.advancedConfig ?? {}
+			const language = (result.language as SupportedLanguage | undefined) || 'zh-CN'
+			const stored = (result.advancedConfig as StoredAdvancedConfig | undefined) ?? {}
 			const advancedConfig = {
 				systemInstruction: DEFAULT_SYSTEM_INSTRUCTION,
 				...stored,
@@ -41,7 +43,7 @@ function useExtConfig() {
 			experimentalIncludeAllTabs,
 			autoExecDelaySec,
 			...llmConfig
-		}: any) => {
+		}: AgentUiConfig) => {
 			await chrome.storage.local.set({ llmConfig })
 			if (language) {
 				await chrome.storage.local.set({ language })
@@ -65,8 +67,8 @@ function useExtConfig() {
 
 export default function App() {
 	const { t, setLocale, userLocale } = useI18n()
-	const [activeSection, setActiveSection] = useState<any>(sectionFromHash)
-	const [showSavedTip, setShowSavedTip] = useState<any>(false)
+	const [activeSection, setActiveSection] = useState<string>(sectionFromHash)
+	const [showSavedTip, setShowSavedTip] = useState<boolean>(false)
 	const { config, saveConfig: rawSaveConfig } = useExtConfig()
 	useEffect(() => {
 		const syncSection = () => setActiveSection(sectionFromHash())
@@ -74,7 +76,7 @@ export default function App() {
 		return () => window.removeEventListener('hashchange', syncSection)
 	}, [])
 	const saveConfig = useCallback(
-		async (cfg: any) => {
+		async (cfg: AgentUiConfig) => {
 			await rawSaveConfig(cfg)
 			setShowSavedTip(true)
 		},

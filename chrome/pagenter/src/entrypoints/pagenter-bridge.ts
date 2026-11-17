@@ -1,4 +1,3 @@
-// TODO(types)
 /**
  * 页面桥 (Page Bridge): injected into the page's MAIN world at document_start.
  * Exposes `window.__pagenter` so page scripts (TipScripts) can call registered
@@ -16,7 +15,7 @@ export default defineUnlistedScript(() => {
 
 	const DEFAULT_BRIDGE_TIMEOUT_MS = 15_000
 
-	function sendBridgeRequest<T = any>(
+	function sendBridgeRequest<T = unknown>(
 		channel: string,
 		payload: unknown,
 		timeoutMs = DEFAULT_BRIDGE_TIMEOUT_MS

@@ -1,26 +1,26 @@
-// TODO(types)
 import { useEffect, useState } from 'react'
 import { LoaderCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { useI18n } from '@/i18n'
+import type { AgentUiConfig } from '@/agent/useAgent'
 
-export function AdvancedSection({ config, onSave }: any) {
+export function AdvancedSection({ config, onSave }: { config: AgentUiConfig | null; onSave: (config: AgentUiConfig) => Promise<void> }) {
 	const { t } = useI18n()
-	const [maxSteps, setMaxSteps] = useState<any>(config?.maxSteps)
-	const [systemInstruction, setSystemInstruction] = useState<any>(config?.systemInstruction ?? '')
-	const [experimentalLlmsTxt, setExperimentalLlmsTxt] = useState<any>(
+	const [maxSteps, setMaxSteps] = useState<number | undefined>(config?.maxSteps)
+	const [systemInstruction, setSystemInstruction] = useState<string>(config?.systemInstruction ?? '')
+	const [experimentalLlmsTxt, setExperimentalLlmsTxt] = useState<boolean>(
 		config?.experimentalLlmsTxt ?? false
 	)
-	const [experimentalIncludeAllTabs, setExperimentalIncludeAllTabs] = useState<any>(
+	const [experimentalIncludeAllTabs, setExperimentalIncludeAllTabs] = useState<boolean>(
 		config?.experimentalIncludeAllTabs ?? false
 	)
-	const [autoExecDelaySec, setAutoExecDelaySec] = useState<any>(config?.autoExecDelaySec ?? 3)
-	const [scriptDigest, setScriptDigest] = useState<any>(config?.scriptInPromptStrategy === 'digest')
-	const [developerMode, setDeveloperMode] = useState<any>(false)
-	const [saving, setSaving] = useState<any>(false)
-	const [saved, setSaved] = useState<any>(false)
+	const [autoExecDelaySec, setAutoExecDelaySec] = useState<number>(config?.autoExecDelaySec ?? 3)
+	const [scriptDigest, setScriptDigest] = useState<boolean>(config?.scriptInPromptStrategy === 'digest')
+	const [developerMode, setDeveloperMode] = useState<boolean>(false)
+	const [saving, setSaving] = useState<boolean>(false)
+	const [saved, setSaved] = useState<boolean>(false)
 	useEffect(() => {
 		chrome.storage.local.get('developerMode').then((r) => setDeveloperMode(!!r.developerMode))
 	}, [])
@@ -51,7 +51,7 @@ export function AdvancedSection({ config, onSave }: any) {
 			setSaving(false)
 		}
 	}
-	async function handleSwitchSave(key: any, value: any) {
+	async function handleSwitchSave<K extends keyof AgentUiConfig>(key: K, value: AgentUiConfig[K]) {
 		if (!config) return
 		const next = { ...config, [key]: value }
 		await onSave(next)

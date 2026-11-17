@@ -1,24 +1,59 @@
-// TODO(types)
 import { useEffect, useRef, useState } from 'react'
 
 import { callApiByProjectAndTool, callUpstreamMcpByName } from '@/agent/exposedApis'
 import { tAsync } from '@/i18n'
 import { parseHubPort } from '@/lib/hubPort'
 import { getApi, getLatestSpecByApi, listApisByProject, listProjects } from '@/lib/sniff/db'
+import type { AgentUiConfig, useAgent } from '@/agent/useAgent'
+
+export type HubWsState = 'disconnected' | 'connecting' | 'connected'
+
+/**
+ * A message from the hub's WebSocket client (parsed JSON, not validated).
+ * Fields are typed as the client sends them for each `type`.
+ */
+interface HubIncomingMessage {
+	type: string
+	requestId?: string | number
+	task: string
+	config?: Partial<AgentUiConfig>
+	projectId: string
+	apiId: string
+	serverName: string
+	toolName: string
+	args?: Record<string, unknown>
+}
+
+interface HubOutgoingMessage {
+	type: string
+	[field: string]: unknown
+}
+
+export interface HubHandlers {
+	onExecute(task: string, config: Partial<AgentUiConfig> | undefined): Promise<{ success: boolean; data: string }>
+	onStop(): void
+	onListProjects?(): Promise<unknown>
+	onListPageApis?(projectId: string): Promise<unknown>
+	onDescribePageApi?(apiId: string): Promise<unknown>
+	onCallPageApi?(projectId: string, toolName: string, args: Record<string, unknown> | undefined): Promise<unknown>
+	onMcpCall?(serverName: string, toolName: string, args: Record<string, unknown> | undefined): Promise<unknown>
+}
+
+type AgentApi = ReturnType<typeof useAgent>
 
 export class HubWs {
 	static MAX_RECONNECT_ATTEMPTS = 8
-	#ws: any = null
-	#state: any = 'disconnected'
+	#ws: WebSocket | null = null
+	#state: HubWsState = 'disconnected'
 	#busy = false
 	#approved = false
 	#manualDisconnect = false
-	#reconnectTimer: any = null
+	#reconnectTimer: ReturnType<typeof setTimeout> | null = null
 	#reconnectAttempt = 0
 	#handlers
 	#port
 	#onStateChange
-	constructor(port: any, handlers: any, onStateChange: any) {
+	constructor(port: number, handlers: HubHandlers, onStateChange: (state: HubWsState) => void) {
 		this.#port = port
 		this.#handlers = handlers
 		this.#onStateChange = onStateChange
@@ -78,18 +113,18 @@ export class HubWs {
 			if (!this.#ws) this.connect()
 		}, delay)
 	}
-	#setState(state: any) {
+	#setState(state: HubWsState) {
 		if (this.#state === state) return
 		this.#state = state
 		this.#onStateChange(state)
 	}
-	#send(msg: any) {
+	#send(msg: HubOutgoingMessage) {
 		if (this.#ws?.readyState === WebSocket.OPEN) {
 			this.#ws.send(JSON.stringify(msg))
 		}
 	}
-	async #handleMessage(raw: any) {
-		let msg
+	async #handleMessage(raw: string) {
+		let msg: HubIncomingMessage
 		try {
 			msg = JSON.parse(raw)
 		} catch {
@@ -119,7 +154,7 @@ export class HubWs {
 	 * 处理 Sniff / MCP 类请求；按 requestId 回 response。
 	 * 若 handler 缺省（旧 caller），返回 not_supported 错误。
 	 */
-	async #handleRequest(msg: any) {
+	async #handleRequest(msg: HubIncomingMessage) {
 		const { requestId } = msg
 		try {
 			let data
@@ -159,7 +194,7 @@ export class HubWs {
 		if (ok) this.#approved = true
 		return ok
 	}
-	async #handleExecute(msg: any) {
+	async #handleExecute(msg: HubIncomingMessage) {
 		if (this.#busy) {
 			this.#send({ type: 'error', message: 'Hub is busy with another task' })
 			return
@@ -176,12 +211,17 @@ export class HubWs {
 	}
 }
 
-export function useHubWs(execute: any, stop: any, configure: any, config: any) {
+export function useHubWs(
+	execute: AgentApi['execute'],
+	stop: AgentApi['stop'],
+	configure: AgentApi['configure'],
+	config: AgentApi['config']
+) {
 	const wsPort = parseHubPort(new URLSearchParams(location.search).get('ws'))
 	// security fix: a port in the URL is only a proposal; connect after the user clicks Connect
 	const [connectRequested, setConnectRequested] = useState(false)
-	const [wsState, setWsState] = useState('disconnected')
-	const hubWsRef = useRef<any>(null)
+	const [wsState, setWsState] = useState<HubWsState>('disconnected')
+	const hubWsRef = useRef<HubWs | null>(null)
 	const latest = useRef({ execute, stop, configure, config })
 	useEffect(() => {
 		latest.current = { execute, stop, configure, config }
@@ -191,7 +231,7 @@ export function useHubWs(execute: any, stop: any, configure: any, config: any) {
 		const hubWs = new HubWs(
 			Number(wsPort),
 			{
-				onExecute: async (task: any, incomingConfig: any) => {
+				onExecute: async (task: string, incomingConfig: Partial<AgentUiConfig> | undefined) => {
 					const { execute: execute2, configure: configure2, config: config } = latest.current
 					if (incomingConfig) {
 						await configure2({ ...config, ...incomingConfig })
@@ -212,7 +252,7 @@ export function useHubWs(execute: any, stop: any, configure: any, config: any) {
 						stats: p.stats,
 					}))
 				},
-				onListPageApis: async (projectId: any) => {
+				onListPageApis: async (projectId: string) => {
 					if (!projectId) throw new Error('projectId is required')
 					const apis = await listApisByProject(projectId)
 					return apis
@@ -227,7 +267,7 @@ export function useHubWs(execute: any, stop: any, configure: any, config: any) {
 							sampleCount: a.sampleCount,
 						}))
 				},
-				onDescribePageApi: async (apiId: any) => {
+				onDescribePageApi: async (apiId: string) => {
 					const api = await getApi(apiId)
 					if (!api) throw new Error(`API ${apiId} not found`)
 					const spec = api.currentSpecId ? await getLatestSpecByApi(apiId) : null
@@ -252,12 +292,12 @@ export function useHubWs(execute: any, stop: any, configure: any, config: any) {
 							: null,
 					}
 				},
-				onCallPageApi: async (projectId: any, toolName: any, args: any) => {
+				onCallPageApi: async (projectId: string, toolName: string, args: Record<string, unknown> | undefined) => {
 					const r = await callApiByProjectAndTool(projectId, toolName, args ?? {})
 					if (r.error) throw new Error(r.error)
 					return r.data
 				},
-				onMcpCall: async (serverName: any, toolName: any, args: any) => {
+				onMcpCall: async (serverName: string, toolName: string, args: Record<string, unknown> | undefined) => {
 					const r = await callUpstreamMcpByName(serverName, toolName, args ?? {})
 					if (r.error) throw new Error(r.error)
 					return r.data

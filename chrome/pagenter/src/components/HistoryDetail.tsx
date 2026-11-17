@@ -1,14 +1,14 @@
-// TODO(types)
 import { ArrowLeft, RotateCcw, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { deleteSession, getSession } from '@/lib/db'
+import type { SessionRecord } from '@/lib/dbSchema'
 
 import { EventCard } from './cards'
 
-export function HistoryDetail({ sessionId, onBack, onRerun }: any) {
-	const [session, setSession] = useState<any>(null)
+export function HistoryDetail({ sessionId, onBack, onRerun }: { sessionId: string; onBack: () => void; onRerun: (task: string) => void }) {
+	const [session, setSession] = useState<SessionRecord | null>(null)
 	useEffect(() => {
 		getSession(sessionId).then((s) => setSession(s ?? null))
 	}, [sessionId])
@@ -55,7 +55,7 @@ export function HistoryDetail({ sessionId, onBack, onRerun }: any) {
 				</div>
 			</div>
 			<div className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-3 space-y-2">
-				{session.history.map((event: any, index: any) => (
+				{session.history.map((event, index) => (
 					// eslint-disable-next-line react-x/no-array-index-key
 					<EventCard key={index} event={event} />
 				))}

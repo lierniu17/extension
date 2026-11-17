@@ -1,4 +1,3 @@
-// TODO(types)
 // Service worker: message hub between extension pages, content scripts, the
 // page bridge and the offscreen document. Owns the CDP proxy, Sniff recording,
 // TipScript execution, the page-bridge channels (APIs, MCP, LLM, KV) and Hub
@@ -17,6 +16,8 @@ import { parseHubPort } from '@/lib/hubPort'
 import { cleanupOrphanKv, kvDelete, kvGet, kvList, kvSet } from '@/lib/kvStore'
 import { getProject, updateProject } from '@/lib/sniff/db'
 import { NetworkRecorder } from '@/lib/sniff/networkRecorder'
+import type { SniffSample } from '@/lib/dbSchema'
+import type { KvPayload, LlmCallPayload } from '@/lib/messages'
 
 // ---- Sniff ----
 
@@ -36,7 +37,8 @@ function getSharedRecorder() {
 const OFFSCREEN_URL = 'offscreen.html'
 
 async function ensureOffscreen() {
-	const hasDoc = (chrome.offscreen as any).hasDocument
+	// hasDocument is missing on older Chrome versions, hence the existence check.
+	const hasDoc = (chrome.offscreen as { hasDocument?: () => Promise<boolean> }).hasDocument
 	if (hasDoc) {
 		const exists = await hasDoc.call(chrome.offscreen)
 		if (exists) return
@@ -57,7 +59,7 @@ async function ensureOffscreen() {
 	}
 }
 
-async function forwardSampleToOffscreen(sample: any) {
+async function forwardSampleToOffscreen(sample: SniffSample) {
 	await ensureOffscreen()
 	chrome.runtime
 		.sendMessage({ type: 'SNIFF_SAMPLE_INGEST', sample })
@@ -262,7 +264,10 @@ async function openOrFocusHubTab(wsPort: number) {
 
 async function handleTipScriptExecute(tabId: number, script: string) {
 	const expression = wrapScriptForEval(script)
-	const result: any = await cdpSend(tabId, 'Runtime.evaluate', {
+	const result: {
+		result?: { value?: unknown }
+		exceptionDetails?: { text?: string; exception?: { description?: string } }
+	} = await cdpSend(tabId, 'Runtime.evaluate', {
 		expression,
 		awaitPromise: true,
 		returnByValue: true,
@@ -286,7 +291,7 @@ async function handleTipScriptQuery(url: string) {
 
 // ---- element picker ----
 
-async function handleElementPicker(tabId: number, action: string, payload: any) {
+async function handleElementPicker(tabId: number, action: string, payload: unknown) {
 	await chrome.tabs.sendMessage(tabId, {
 		type: 'ELEMENT_PICKER',
 		action,
@@ -298,7 +303,7 @@ async function handleElementPicker(tabId: number, action: string, payload: any) 
 // ---- page bridge: LLM ----
 
 /** `window.__pagenter.llm()`: one chat completion with the model configured in settings. */
-async function handleLlmCall(payload: any) {
+async function handleLlmCall(payload: LlmCallPayload | undefined) {
 	if (!payload?.messages || !Array.isArray(payload.messages) || payload.messages.length === 0) {
 		return { error: 'messages is required and must be a non-empty array' }
 	}
@@ -358,7 +363,7 @@ async function handleLlmCall(payload: any) {
  * `window.__pagenter.kv.*`: scoped to the session of the calling tab, as decided by
  * authorizeBridgeCall (the agent task's session, or the tab's TipScript session).
  */
-async function handleKvCall(type: string, payload: any, sessionId: string | null) {
+async function handleKvCall(type: string, payload: KvPayload | undefined, sessionId: string | null) {
 	if (!sessionId) {
 		return {
 			error:

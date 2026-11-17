@@ -1,18 +1,17 @@
-// TODO(types)
 import { useEffect, useState } from 'react'
 import { ExternalLink } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { useI18n } from '@/i18n'
 
-export function HubSection({ onSettingsChanged }: any) {
+export function HubSection({ onSettingsChanged }: { onSettingsChanged?: () => void }) {
 	const { t } = useI18n()
-	const [allowAll, setAllowAll] = useState<any>(false)
+	const [allowAll, setAllowAll] = useState<boolean>(false)
 	useEffect(() => {
 		chrome.storage.local.get('allowAllHubConnection').then((r) => {
 			setAllowAll(r.allowAllHubConnection === true)
 		})
 	}, [])
-	const toggle = (checked: any) => {
+	const toggle = (checked: boolean) => {
 		setAllowAll(checked)
 		chrome.storage.local.set({ allowAllHubConnection: checked })
 		onSettingsChanged?.()
