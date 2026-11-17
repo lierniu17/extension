@@ -9,7 +9,7 @@
 _Avoid_: page-agent 扩展、Pagent
 
 **产物 (Bundle)**:
-目录 `chrome/pagenter-ext-1.8.0-chrome` 下已构建、未压缩的扩展文件，是还原工作的唯一事实来源，永远原样保留。
+目录 `chrome/pagenter-ext-1.8.0-chrome` 下已构建、未压缩的扩展文件，是还原工作的唯一事实来源。逆向完成后已从工作区删除，留在 git 历史里。
 _Avoid_: 成品、dist、原包
 
 **还原源码 (Restored Source)**:
